@@ -33,4 +33,5 @@ private:
 	
 	Token makeToken(TokenType type, const std::string& value);
 	Token lexIdentifier();
+	Token lexQuotedString();
 };

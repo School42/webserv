@@ -1,14 +1,33 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <cstring>
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "ConfigError.hpp"
+
+// Helper function to check if filename ends with .conf
+static bool hasConfExtension(const char* filename) {
+	size_t len = std::strlen(filename);
+	
+	// Must be at least 6 characters (x.conf)
+	if (len < 6)
+		return false;
+	
+	// Check last 5 characters are ".conf"
+	return std::strcmp(filename + len - 5, ".conf") == 0;
+}
 
 int main(int argc, char** argv) {
 	try {
 		if (argc != 2) {
 			std::cerr << "Usage: " << argv[0] << " <config_file>" << std::endl;
+			return 1;
+		}
+		
+		// Check file extension
+		if (!hasConfExtension(argv[1])) {
+			std::cerr << "Error: Configuration file must have .conf extension" << std::endl;
 			return 1;
 		}
 		
@@ -29,22 +48,22 @@ int main(int argc, char** argv) {
 		Parser parser(lexer);
 		std::vector<ServerConfig> servers = parser.parse();
 		
-		std::cout << "\n✓ Configuration parsed successfully!" << std::endl;
+		std::cout << "✓ Configuration parsed successfully!" << std::endl;
 		std::cout << "Total servers: " << servers.size() << std::endl;
 		
 		return 0;
 		
 	} catch (const ConfigError& e) {
 		// ConfigError with detailed location info
-		std::cerr << "\n✗ " << e.formatMessage() << std::endl;
+		std::cerr << "✗ " << e.formatMessage() << std::endl;
 		return 1;
 	} catch (const std::runtime_error& e) {
 		// Fallback for any other runtime errors
-		std::cerr << "\n✗ Runtime error: " << e.what() << std::endl;
+		std::cerr << "✗ Runtime error: " << e.what() << std::endl;
 		return 1;
 	} catch (const std::exception& e) {
 		// Catch-all for unexpected errors
-		std::cerr << "\n✗ Unexpected error: " << e.what() << std::endl;
+		std::cerr << "✗ Unexpected error: " << e.what() << std::endl;
 		return 1;
 	}
 }

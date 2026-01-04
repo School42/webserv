@@ -38,6 +38,9 @@ std::vector<Token> Parser::collectValuesUntilSemicolon() {
 		if (_current.type == TOK_EOF)
 			throw ConfigError("Unexpected end of file, expected ';'", _current);
 		
+		if (_current.type == TOK_ERROR)
+			throw ConfigError(_current.value, _current);
+		
 		values.push_back(_current);
 		advance();
 	}
@@ -68,6 +71,70 @@ const DirectiveSpec* Parser::findDirectiveInLocation(const std::string& name) co
 	return NULL;
 }
 
+// Validate IPv4 address format
+bool Parser::isValidIPv4(const std::string& ip) const {
+	if (ip.empty())
+		return false;
+	
+	int dots = 0;
+	int octetStart = 0;
+	
+	for (size_t i = 0; i <= ip.length(); ++i) {
+		// End of octet (dot or end of string)
+		if (i == ip.length() || ip[i] == '.') {
+			// Check octet length
+			int octetLen = static_cast<int>(i) - octetStart;
+			if (octetLen == 0 || octetLen > 3)
+				return false;
+			
+			// Extract and validate octet
+			std::string octetStr = ip.substr(octetStart, octetLen);
+			
+			// Check for leading zeros (e.g., "01" is invalid, but "0" is valid)
+			if (octetLen > 1 && octetStr[0] == '0')
+				return false;
+			
+			// Check all characters are digits
+			for (size_t j = 0; j < octetStr.length(); ++j) {
+				if (!std::isdigit(static_cast<unsigned char>(octetStr[j])))
+					return false;
+			}
+			
+			// Convert and check range
+			char* end = NULL;
+			long val = std::strtol(octetStr.c_str(), &end, 10);
+			if (val < 0 || val > 255)
+				return false;
+			
+			if (i < ip.length()) {
+				dots++;
+				octetStart = static_cast<int>(i) + 1;
+			}
+		}
+	}
+	
+	// Must have exactly 3 dots (4 octets)
+	return dots == 3;
+}
+
+// Validate redirect URL format
+bool Parser::isValidRedirectUrl(const std::string& url) const {
+	if (url.empty())
+		return false;
+	
+	// Must start with /, http://, or https://
+	if (url[0] == '/')
+		return true;
+	
+	if (url.length() >= 7 && url.substr(0, 7) == "http://")
+		return true;
+	
+	if (url.length() >= 8 && url.substr(0, 8) == "https://")
+		return true;
+	
+	return false;
+}
+
 // Parse listen address (support both "port" and "interface:port")
 ListenAddress Parser::parseListenAddress(const Token& token) const {
 	const std::string& value = token.value;
@@ -94,6 +161,10 @@ ListenAddress Parser::parseListenAddress(const Token& token) const {
 	
 	if (interface.empty())
 		throw ConfigError("Empty interface in listen directive", token);
+	
+	// Validate IP address format
+	if (!isValidIPv4(interface))
+		throw ConfigError("Invalid IPv4 address in listen directive: '" + interface + "'", token);
 	
 	if (port_str.empty())
 		throw ConfigError("Empty port in listen directive", token);
@@ -301,8 +372,6 @@ void Parser::applyServerDirective(ServerConfig& server, const Token& name, const
 		
 		int code = toInt(values[0]);
 		if (code < 400 || code > 599) {
-			std::cout << "Testing\n"; 
-			std::cout << "line : " << values[0].line << " col : " << values[0].col << std::endl;
 			throw ConfigError("Error code must be between 400 and 599", values[0]);
 		}
 		server.addErrorPage(code, values[1].value);
@@ -367,10 +436,45 @@ void Parser::applyLocationDirective(LocationConfig& location, const Token& name,
 	
 	// return
 	if (dir == "return") {
-		if (values.size() != 2)
-			throw ConfigError("'return' expects exactly 2 arguments: status_code and URL", name);
+		if (values.empty())
+			throw ConfigError("'return' expects at least one argument (status code)", name);
 		
-		location.setReturn(values[0].value, values[1].value);
+		if (values.size() > 2)
+			throw ConfigError("'return' expects at most 2 arguments (status code and optional URL/body)", name);
+		
+		// Parse and validate status code
+		const Token& codeToken = values[0];
+		char* end = NULL;
+		errno = 0;
+		long code = std::strtol(codeToken.value.c_str(), &end, 10);
+		
+		if (errno != 0 || end == codeToken.value.c_str() || *end != '\0')
+			throw ConfigError("Invalid status code in 'return' directive", codeToken);
+		
+		if (code < 200 || code > 599)
+			throw ConfigError("Status code must be between 200 and 599", codeToken);
+		
+		// Check if it's a redirect (3xx)
+		bool isRedirect = (code >= 300 && code <= 399);
+		
+		if (isRedirect) {
+			// Redirects require exactly 2 arguments
+			if (values.size() != 2)
+				throw ConfigError("Redirect status codes (3xx) require a URL argument", name);
+			
+			const std::string& url = values[1].value;
+			if (!isValidRedirectUrl(url))
+				throw ConfigError("Invalid redirect URL - must start with '/', 'http://', or 'https://'", values[1]);
+			
+			location.setReturn(codeToken.value, url);
+		} else {
+			// Non-redirects: 1 or 2 arguments
+			if (values.size() == 1) {
+				location.setReturn(codeToken.value, "");
+			} else {
+				location.setReturn(codeToken.value, values[1].value);
+			}
+		}
 		return;
 	}
 	
@@ -420,9 +524,7 @@ void Parser::applyLocationDirective(LocationConfig& location, const Token& name,
 			const std::string& method = values[i].value;
 			
 			// Validate HTTP method (optional but good practice)
-			if (method != "GET" && method != "POST" && method != "DELETE" && 
-			    method != "PUT" && method != "HEAD" && method != "PATCH" &&
-			    method != "OPTIONS" && method != "CONNECT" && method != "TRACE")
+			if (method != "GET" && method != "POST" && method != "DELETE")
 				throw ConfigError("Invalid HTTP method: '" + method + "'", values[i]);
 			
 			location.addAllowedMethod(method);
@@ -530,10 +632,9 @@ void Parser::applyLocationDefaults(LocationConfig& location) {
 	if (!location.hasIndex())
 		location.addIndex("index.html");
 	
-	// Default: allowed_methods = GET HEAD POST
+	// Default: allowed_methods = GET POST
 	if (location.getAllowedMethods().empty()) {
 		location.addAllowedMethod("GET");
-		location.addAllowedMethod("HEAD");
 		location.addAllowedMethod("POST");
 	}
 }

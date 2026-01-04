@@ -103,6 +103,10 @@ private:
 	// Listen parsing helper
 	ListenAddress parseListenAddress(const Token& token) const;
 	
+	// Validation helpers
+	bool isValidIPv4(const std::string& ip) const;
+	bool isValidRedirectUrl(const std::string& url) const;
+	
 	// Validation & defaults
 	void validateAndApplyDefaults(ServerConfig& server);
 	void applyServerDefaults(ServerConfig& server);

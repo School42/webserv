@@ -64,6 +64,72 @@ Token Lexer::lexIdentifier() {
 	return makeToken(TOK_IDENT, _input.substr(start, _pos - start));
 }
 
+Token Lexer::lexQuotedString() {
+	char quote = currentChar(); // store the quote char
+	int startLine = _line;
+	int startCol = _col;
+
+	advance(); // skip  opening quote
+
+	std::string value;
+
+	while (currentChar() != '\0' && currentChar() != quote) {
+		// handle escape sequences
+		if (currentChar() == '\\') {
+			advance(); // skip backslash
+
+			if (currentChar() == '\0') {
+				Token errTok;
+				errTok.type = TOK_ERROR;
+				errTok.value = "Unterminated string - unexpected end of file after escape";
+				errTok.line = startLine;
+				errTok.col = startCol;
+				return errTok;
+			}
+
+			// handle common escape sequences
+			switch (currentChar()) {
+				case 'n': value += '\n'; break;
+				case 't': value += '\t'; break;
+				case 'r': value += '\r'; break;
+				case '\\': value += '\\'; break;
+				case '"': value += '"'; break;
+				case '\'': value += '\''; break;
+				default: value += currentChar(); break; // unknown escape
+			}
+			advance();
+		} else if (currentChar() == '\n') {
+			Token errTok;
+			errTok.type = TOK_ERROR;
+			errTok.value = "Unterminated string - newline in string";
+			errTok.line = startLine;
+			errTok.col = startCol;
+			return errTok;
+		} else {
+			value += currentChar();
+			advance();
+		}
+	}
+
+	if (currentChar() == '\0') {
+		Token errTok;
+		errTok.type = TOK_ERROR;
+		errTok.value = "Unterminated string";
+		errTok.line = startLine;
+		errTok.col = startCol;
+		return errTok;
+	}
+
+	advance(); // skip closing quote
+
+	Token tok;
+	tok.type = TOK_IDENT;
+	tok.value = value;
+	tok.line = startLine;
+	tok.col = startCol;
+	return tok;
+}
+
 Token Lexer::nextToken() {
 	while (true) {
 		skipWhitespace();
@@ -78,6 +144,10 @@ Token Lexer::nextToken() {
 	
 	if (c == '\0')
 		return makeToken(TOK_EOF, "");
+
+	// handle quoted strings
+	if (c == '"' || c == '\'')
+		return lexQuotedString();
 	
 	if (std::isalnum(static_cast<unsigned char>(c)) || 
 	    c == '/' || c == '.' || c == '-' || c == '_' || c == ':')

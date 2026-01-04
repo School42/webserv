@@ -2,7 +2,6 @@
 #include <string>
 #include <stdexcept>
 #include <sstream>
-#include <iostream>
 #include "Token.hpp"
 
 class ConfigError : public std::runtime_error {
@@ -33,6 +32,6 @@ private:
 	int _col;
 	bool _has_location;
 	
-	// Helper to build what() string
-	std::string buildWhatString() const;
+	// Helper to build what() string - must be static to avoid using uninitialized members
+	static std::string buildWhatString(const std::string& message, int line, int col, bool has_location);
 };
