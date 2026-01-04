@@ -3,6 +3,7 @@
 #include <ctime>
 #include <sys/types.h>
 #include "ServerConfig.hpp"
+#include "HttpRequest.hpp"
 
 // Client connection states
 enum ClientState {
@@ -52,6 +53,10 @@ public:
 	void setServerConfig(const ServerConfig* config);
 	const ServerConfig* getServerConfig() const;
 	
+	// HTTP request access
+	HttpRequest& getRequest();
+	const HttpRequest& getRequest() const;
+	
 	// Timeout check
 	bool isTimedOut(time_t timeout) const;
 	
@@ -89,6 +94,9 @@ private:
 	
 	// Associated server config (set after Host header is parsed)
 	const ServerConfig* _serverConfig;
+	
+	// HTTP request parser
+	HttpRequest _request;
 	
 	// Keep-alive
 	bool _keepAlive;

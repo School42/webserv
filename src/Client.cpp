@@ -144,6 +144,15 @@ const ServerConfig* Client::getServerConfig() const {
 	return _serverConfig;
 }
 
+// HTTP request access
+HttpRequest& Client::getRequest() {
+	return _request;
+}
+
+const HttpRequest& Client::getRequest() const {
+	return _request;
+}
+
 // Timeout check
 bool Client::isTimedOut(time_t timeout) const {
 	return (std::time(NULL) - _lastActivity) > timeout;
@@ -174,5 +183,6 @@ void Client::reset() {
 	_writeBuffer.clear();
 	_writeOffset = 0;
 	_serverConfig = NULL;
+	_request.reset();
 	updateLastActivity();
 }

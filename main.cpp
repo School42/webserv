@@ -10,6 +10,7 @@
 #include "Epoll.hpp"
 #include "Client.hpp"
 #include "ClientManager.hpp"
+#include "HttpRequest.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "ConfigError.hpp"
@@ -48,6 +49,70 @@ Socket* findListenSocket(int fd, const std::vector<Socket*>& listenSockets) {
 	return NULL;
 }
 
+// Build a simple error response
+std::string buildErrorResponse(int statusCode, const std::string& statusText, const std::string& message) {
+	std::stringstream body;
+	body << "<html><head><title>" << statusCode << " " << statusText << "</title></head>"
+	     << "<body><h1>" << statusCode << " " << statusText << "</h1>"
+	     << "<p>" << message << "</p></body></html>";
+	
+	std::string bodyStr = body.str();
+	
+	std::stringstream response;
+	response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
+	         << "Content-Type: text/html\r\n"
+	         << "Content-Length: " << bodyStr.size() << "\r\n"
+	         << "Connection: close\r\n"
+	         << "\r\n"
+	         << bodyStr;
+	
+	return response.str();
+}
+
+// Build a simple success response
+std::string buildSuccessResponse(const HttpRequest& request) {
+	std::stringstream body;
+	body << "<html><head><title>Request Received</title></head><body>"
+	     << "<h1>Request Received</h1>"
+	     << "<p><strong>Method:</strong> " << request.getMethod() << "</p>"
+	     << "<p><strong>URI:</strong> " << request.getUri() << "</p>"
+	     << "<p><strong>Path:</strong> " << request.getPath() << "</p>"
+	     << "<p><strong>Query:</strong> " << request.getQueryString() << "</p>"
+	     << "<p><strong>Host:</strong> " << request.getHost() << "</p>"
+	     << "<p><strong>HTTP Version:</strong> " << request.getHttpVersion() << "</p>"
+	     << "<h2>Headers:</h2><ul>";
+	
+	const std::map<std::string, std::string>& headers = request.getHeaders();
+	for (std::map<std::string, std::string>::const_iterator it = headers.begin();
+	     it != headers.end(); ++it) {
+		body << "<li><strong>" << it->first << ":</strong> " << it->second << "</li>";
+	}
+	body << "</ul>";
+	
+	if (!request.getBody().empty()) {
+		body << "<h2>Body:</h2><pre>" << request.getBody() << "</pre>";
+	}
+	
+	body << "</body></html>";
+	
+	std::string bodyStr = body.str();
+	
+	std::stringstream response;
+	response << "HTTP/1.1 200 OK\r\n"
+	         << "Content-Type: text/html\r\n"
+	         << "Content-Length: " << bodyStr.size() << "\r\n";
+	
+	if (request.isKeepAlive()) {
+		response << "Connection: keep-alive\r\n";
+	} else {
+		response << "Connection: close\r\n";
+	}
+	
+	response << "\r\n" << bodyStr;
+	
+	return response.str();
+}
+
 // Handle new connection on listen socket
 void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 	std::string clientAddr;
@@ -60,7 +125,7 @@ void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 		std::cout << "New connection from " << clientAddr << ":" << clientPort 
 		          << " (fd: " << clientFd << ") - Total clients: " 
 		          << clientManager.getClientCount() << std::endl;
-		(void)client;  // Will be used later
+		(void)client;
 	}
 }
 
@@ -69,7 +134,6 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 	ssize_t bytesRead = client->readData();
 	
 	if (bytesRead < 0) {
-		// Error reading (EAGAIN/EWOULDBLOCK means try again later)
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			std::cerr << "Error reading from client " << client->getFd() 
 			          << ": " << std::strerror(errno) << std::endl;
@@ -79,47 +143,48 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 	}
 	
 	if (bytesRead == 0) {
-		// Client closed connection
 		std::cout << "Client " << client->getAddress() << ":" << client->getPort() 
-		          << " closed connection (fd: " << client->getFd() << ")" << std::endl;
+		          << " closed connection" << std::endl;
 		clientManager.removeClient(client->getFd());
 		return;
 	}
 	
-	// Data received - for now, check if we have a complete HTTP request
-	// (Simple check: look for \r\n\r\n which marks end of headers)
-	const std::string& buffer = client->getReadBuffer();
-	size_t headerEnd = buffer.find("\r\n\r\n");
+	// Parse the HTTP request
+	HttpRequest& request = client->getRequest();
+	size_t bytesConsumed = 0;
+	HttpParseResult result = request.parse(client->getReadBuffer(), bytesConsumed);
 	
-	if (headerEnd != std::string::npos) {
-		// We have complete headers - for now, send a simple response
-		std::cout << "Received complete request from " << client->getAddress() 
-		          << " (" << buffer.size() << " bytes)" << std::endl;
+	// Remove consumed bytes from buffer
+	if (bytesConsumed > 0) {
+		std::string& buffer = const_cast<std::string&>(client->getReadBuffer());
+		buffer.erase(0, bytesConsumed);
+	}
+	
+	if (result == PARSE_FAILED) {
+		std::cerr << "Parse error from " << client->getAddress() << ": " 
+		          << request.getErrorMessage() << std::endl;
 		
-		// TODO: Parse request and generate proper response
-		// For now, send a simple response
-		std::string response = 
-			"HTTP/1.1 200 OK\r\n"
-			"Content-Type: text/html\r\n"
-			"Content-Length: 48\r\n"
-			"Connection: close\r\n"
-			"\r\n"
-			"<html><body><h1>Hello World!</h1></body></html>";
+		client->appendToWriteBuffer(buildErrorResponse(400, "Bad Request", request.getErrorMessage()));
+		client->setState(STATE_WRITING_RESPONSE);
+		client->setKeepAlive(false);
+		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
+		return;
+	}
+	
+	if (result == PARSE_SUCCESS) {
+		std::cout << "Request: " << request.getMethod() << " " << request.getUri() 
+		          << " from " << client->getAddress() << std::endl;
+		
+		// TODO: Route request to proper handler based on config
+		// For now, just return request info
+		std::string response = buildSuccessResponse(request);
 		
 		client->appendToWriteBuffer(response);
-		client->clearReadBuffer();
 		client->setState(STATE_WRITING_RESPONSE);
-		client->setKeepAlive(false);  // For now, close after response
-		
-		// Switch to write mode in epoll
+		client->setKeepAlive(request.isKeepAlive());
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
 	}
-	
-	// If buffer is too large, reject (will be replaced by proper request parsing)
-	if (buffer.size() > 1024 * 1024) {
-		std::cerr << "Request too large from client " << client->getFd() << std::endl;
-		clientManager.removeClient(client->getFd());
-	}
+	// If PARSE_INCOMPLETE, wait for more data
 }
 
 // Handle client write event
@@ -135,18 +200,15 @@ void handleClientWrite(Client* client, Epoll& epoll, ClientManager& clientManage
 		return;
 	}
 	
-	// Check if all data has been written
 	if (!client->hasDataToWrite()) {
 		std::cout << "Response sent to " << client->getAddress() << ":" << client->getPort() << std::endl;
 		
 		if (client->isKeepAlive() && client->getRequestCount() < MAX_KEEPALIVE_REQUESTS) {
-			// Keep connection alive for next request
 			client->incrementRequestCount();
 			client->reset();
 			epoll.modify(client->getFd(), EVENT_READ | EVENT_RDHUP);
-			std::cout << "Keeping connection alive (request #" << client->getRequestCount() << ")" << std::endl;
+			std::cout << "  (keeping connection alive, request #" << client->getRequestCount() << ")" << std::endl;
 		} else {
-			// Close connection
 			client->setState(STATE_DONE);
 			clientManager.removeClient(client->getFd());
 		}
@@ -160,14 +222,12 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 		return;
 	}
 	
-	// Check for errors or hangup
 	if (event.isError() || event.isHangup() || event.isPeerClosed()) {
 		std::cout << "Client " << client->getAddress() << " disconnected or error" << std::endl;
 		clientManager.removeClient(event.fd);
 		return;
 	}
 	
-	// Handle based on state
 	switch (client->getState()) {
 		case STATE_READING_REQUEST:
 			if (event.isReadable()) {
@@ -193,10 +253,9 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 }
 
 int main(int argc, char** argv) {
-	// Setup signal handlers
 	std::signal(SIGINT, signalHandler);
 	std::signal(SIGTERM, signalHandler);
-	std::signal(SIGPIPE, SIG_IGN);  // Ignore SIGPIPE (handle write errors instead)
+	std::signal(SIGPIPE, SIG_IGN);
 	
 	try {
 		if (argc != 2) {
@@ -204,14 +263,12 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 		
-		// Check file extension
 		std::string filename = argv[1];
 		if (filename.length() < 6 || filename.substr(filename.length() - 5) != ".conf") {
 			std::cerr << "Error: Configuration file must have .conf extension" << std::endl;
 			return 1;
 		}
 		
-		// Read config file
 		std::ifstream file(argv[1]);
 		if (!file) {
 			std::cerr << "Error: Cannot open file: " << argv[1] << std::endl;
@@ -223,7 +280,6 @@ int main(int argc, char** argv) {
 		std::string config = buffer.str();
 		file.close();
 		
-		// Parse configuration
 		Lexer lexer(config);
 		Parser parser(lexer);
 		std::vector<ServerConfig> servers = parser.parse();
@@ -231,22 +287,18 @@ int main(int argc, char** argv) {
 		std::cout << "✓ Configuration parsed successfully!" << std::endl;
 		std::cout << "Total servers: " << servers.size() << std::endl;
 		
-		// Create epoll instance
 		Epoll epoll;
 		std::cout << "✓ Epoll instance created" << std::endl;
 		
-		// Create client manager
 		ClientManager clientManager(epoll);
 		
-		// Create listening sockets
 		std::vector<Socket*> listenSockets;
-		std::map<int, int> fdToServerIndex;  // Map listen fd to server index
+		std::map<int, int> fdToServerIndex;
 		
 		for (size_t i = 0; i < servers.size(); ++i) {
 			const std::vector<ListenAddress>& addrs = servers[i].getListenAddresses();
 			
 			for (size_t j = 0; j < addrs.size(); ++j) {
-				// Check for duplicate
 				bool exists = false;
 				for (size_t k = 0; k < listenSockets.size(); ++k) {
 					std::string sockAddr = listenSockets[k]->getAddress();
@@ -276,21 +328,17 @@ int main(int argc, char** argv) {
 		}
 		
 		std::cout << "\n=== Server is running. Press Ctrl+C to stop ===" << std::endl;
-		std::cout << "Active clients: 0" << std::endl;
 		
-		// Main event loop
 		std::vector<Event> events;
 		time_t lastTimeoutCheck = std::time(NULL);
 		
 		while (g_running) {
 			int numEvents = epoll.wait(events, EPOLL_TIMEOUT);
 			
-			// Process events
 			for (int i = 0; i < numEvents; ++i) {
 				int fd = events[i].fd;
 				
 				if (isListenSocket(fd, listenSockets)) {
-					// New connection
 					if (events[i].isReadable()) {
 						Socket* listenSock = findListenSocket(fd, listenSockets);
 						if (listenSock) {
@@ -298,12 +346,10 @@ int main(int argc, char** argv) {
 						}
 					}
 				} else if (clientManager.hasClient(fd)) {
-					// Client event
 					handleClientEvent(events[i], epoll, clientManager);
 				}
 			}
 			
-			// Periodic timeout check (every second)
 			time_t now = std::time(NULL);
 			if (now - lastTimeoutCheck >= 1) {
 				clientManager.checkTimeouts(CLIENT_TIMEOUT);
@@ -311,7 +357,6 @@ int main(int argc, char** argv) {
 			}
 		}
 		
-		// Cleanup
 		std::cout << "\nShutting down..." << std::endl;
 		
 		for (size_t i = 0; i < listenSockets.size(); ++i) {
