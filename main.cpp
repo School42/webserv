@@ -12,6 +12,7 @@
 #include "ClientManager.hpp"
 #include "HttpRequest.hpp"
 #include "Router.hpp"
+#include "FileServer.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "ConfigError.hpp"
@@ -60,7 +61,8 @@ std::string buildResponse(int statusCode, const std::string& statusText,
 	std::stringstream response;
 	response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
 	         << "Content-Type: " << contentType << "\r\n"
-	         << "Content-Length: " << body.size() << "\r\n";
+	         << "Content-Length: " << body.size() << "\r\n"
+	         << "Server: webserv/1.0\r\n";
 	
 	if (keepAlive) {
 		response << "Connection: keep-alive\r\n";
@@ -77,19 +79,8 @@ std::string buildResponse(int statusCode, const std::string& statusText,
 	return response.str();
 }
 
-// Build error response
-std::string buildErrorResponse(int statusCode, const std::string& statusText,
-                               const std::string& message, bool keepAlive) {
-	std::stringstream body;
-	body << "<!DOCTYPE html><html><head><title>" << statusCode << " " << statusText << "</title></head>"
-	     << "<body><h1>" << statusCode << " " << statusText << "</h1>"
-	     << "<p>" << message << "</p><hr><p>webserv</p></body></html>";
-	
-	return buildResponse(statusCode, statusText, "text/html", body.str(), keepAlive);
-}
-
 // Build redirect response
-std::string buildRedirectResponse(int code, const std::string& location) {
+std::string buildRedirectResponse(int code, const std::string& location, bool keepAlive) {
 	std::string statusText;
 	switch (code) {
 		case 301: statusText = "Moved Permanently"; break;
@@ -107,54 +98,7 @@ std::string buildRedirectResponse(int code, const std::string& location) {
 	
 	std::string extraHeaders = "Location: " + location + "\r\n";
 	
-	return buildResponse(code, statusText, "text/html", body.str(), false, extraHeaders);
-}
-
-// Build success response showing routing info (for testing)
-std::string buildRoutingInfoResponse(const HttpRequest& request, const RouteResult& route) {
-	std::stringstream body;
-	body << "<!DOCTYPE html><html><head><title>Routing Info</title></head><body>"
-	     << "<h1>Request Routed Successfully</h1>"
-	     << "<h2>Request Info</h2>"
-	     << "<p><strong>Method:</strong> " << request.getMethod() << "</p>"
-	     << "<p><strong>URI:</strong> " << request.getUri() << "</p>"
-	     << "<p><strong>Path:</strong> " << request.getPath() << "</p>"
-	     << "<p><strong>Query:</strong> " << request.getQueryString() << "</p>"
-	     << "<p><strong>Host:</strong> " << request.getHost() << "</p>"
-	     << "<h2>Routing Result</h2>"
-	     << "<p><strong>Matched Server:</strong> ";
-	
-	if (route.server) {
-		const std::vector<std::string>& names = route.server->getServerNames();
-		if (names.empty()) {
-			body << "(default)";
-		} else {
-			body << names[0];
-		}
-	}
-	
-	body << "</p><p><strong>Matched Location:</strong> ";
-	if (route.location) {
-		body << route.location->getPath();
-	}
-	
-	body << "</p><p><strong>Resolved Path:</strong> " << route.resolvedPath << "</p>"
-	     << "<p><strong>Root:</strong> " << (route.location ? route.location->getRoot() : "(none)") << "</p>"
-	     << "<p><strong>Allowed Methods:</strong> ";
-	
-	if (route.location) {
-		const std::vector<std::string>& methods = route.location->getAllowedMethods();
-		for (size_t i = 0; i < methods.size(); ++i) {
-			body << methods[i];
-			if (i < methods.size() - 1) body << ", ";
-		}
-	}
-	
-	body << "</p><p><strong>Is CGI:</strong> " 
-	     << (route.location && !route.location->getCgiExtension().empty() ? "Possible" : "No")
-	     << "</p></body></html>";
-	
-	return buildResponse(200, "OK", "text/html", body.str(), request.isKeepAlive());
+	return buildResponse(code, statusText, "text/html", body.str(), keepAlive, extraHeaders);
 }
 
 // Handle new connection
@@ -177,8 +121,97 @@ void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 	}
 }
 
+// Process a completed HTTP request
+void processRequest(Client* client, Router& router, FileServer& fileServer) {
+	HttpRequest& request = client->getRequest();
+	std::string response;
+	bool keepAlive = request.isKeepAlive();
+	
+	std::cout << "Request: " << request.getMethod() << " " << request.getUri() 
+	          << " from " << client->getAddress() << std::endl;
+	
+	// Route the request
+	int listenPort = g_fdToPort[client->getFd()];
+	RouteResult route = router.route(request, listenPort);
+	
+	if (!route.matched) {
+		// Routing failed - serve error page
+		std::cout << "  Route error: " << route.errorCode << " " << route.errorMessage << std::endl;
+		
+		if (route.server) {
+			FileResult errPage = fileServer.serveErrorPage(*route.server, route.errorCode);
+			response = buildResponse(errPage.statusCode, errPage.statusText,
+			                         errPage.contentType, errPage.body, false);
+		} else {
+			// No server found - use default error page
+			FileResult errPage;
+			errPage.statusCode = route.errorCode;
+			errPage.statusText = route.errorCode == 404 ? "Not Found" :
+			                     route.errorCode == 405 ? "Method Not Allowed" :
+			                     route.errorCode == 403 ? "Forbidden" : "Error";
+			std::stringstream errBody;
+			errBody << "<!DOCTYPE html><html><head><title>" << route.errorCode 
+			        << "</title></head><body><h1>" << route.errorCode << " " 
+			        << errPage.statusText << "</h1><p>" << route.errorMessage 
+			        << "</p><hr><p>webserv</p></body></html>";
+			response = buildResponse(route.errorCode, errPage.statusText,
+			                         "text/html", errBody.str(), false);
+		}
+		keepAlive = false;
+		
+	} else if (router.hasRedirect(*route.location)) {
+		// Handle redirect from config (return directive)
+		int code;
+		std::string url;
+		router.getRedirect(*route.location, code, url);
+		std::cout << "  Redirect: " << code << " -> " << url << std::endl;
+		response = buildRedirectResponse(code, url, false);
+		keepAlive = false;
+		
+	} else {
+		// Try to serve file
+		std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
+		
+		// Check if it's a CGI request (will be implemented in Phase 6)
+		if (router.isCgiRequest(*route.location, route.resolvedPath)) {
+			std::cout << "  CGI request detected (not implemented yet)" << std::endl;
+			FileResult errPage = fileServer.serveErrorPage(*route.server, 501);
+			response = buildResponse(501, "Not Implemented", "text/html", 
+			                         errPage.body, false);
+			keepAlive = false;
+		} else {
+			// Serve static file
+			FileResult fileResult = fileServer.serveFile(request, route);
+			
+			if (fileResult.statusCode == 301 && !fileResult.redirectPath.empty()) {
+				// Directory redirect (add trailing slash)
+				std::cout << "  Directory redirect: " << fileResult.redirectPath << std::endl;
+				response = buildRedirectResponse(301, fileResult.redirectPath, keepAlive);
+			} else if (fileResult.success) {
+				// Success - serve file
+				std::cout << "  Serving: " << fileResult.contentType 
+				          << " (" << fileResult.body.size() << " bytes)" << std::endl;
+				response = buildResponse(fileResult.statusCode, fileResult.statusText,
+				                         fileResult.contentType, fileResult.body, keepAlive);
+			} else {
+				// Error - try custom error page
+				std::cout << "  File error: " << fileResult.statusCode 
+				          << " " << fileResult.errorMessage << std::endl;
+				FileResult errPage = fileServer.serveErrorPage(*route.server, fileResult.statusCode);
+				response = buildResponse(fileResult.statusCode, fileResult.statusText,
+				                         errPage.contentType, errPage.body, false);
+				keepAlive = false;
+			}
+		}
+	}
+	
+	client->appendToWriteBuffer(response);
+	client->setKeepAlive(keepAlive);
+}
+
 // Handle client read event
-void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager, Router& router) {
+void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager, 
+                      Router& router, FileServer& fileServer) {
 	ssize_t bytesRead = client->readData();
 	
 	if (bytesRead < 0) {
@@ -212,8 +245,13 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 		std::cerr << "Parse error from " << client->getAddress() << ": " 
 		          << request.getErrorMessage() << std::endl;
 		
+		std::stringstream errBody;
+		errBody << "<!DOCTYPE html><html><head><title>400 Bad Request</title></head>"
+		        << "<body><h1>400 Bad Request</h1><p>" << request.getErrorMessage() 
+		        << "</p><hr><p>webserv</p></body></html>";
+		
 		client->appendToWriteBuffer(
-			buildErrorResponse(400, "Bad Request", request.getErrorMessage(), false));
+			buildResponse(400, "Bad Request", "text/html", errBody.str(), false));
 		client->setState(STATE_WRITING_RESPONSE);
 		client->setKeepAlive(false);
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
@@ -221,42 +259,7 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 	}
 	
 	if (result == PARSE_SUCCESS) {
-		std::cout << "Request: " << request.getMethod() << " " << request.getUri() 
-		          << " from " << client->getAddress() << std::endl;
-		
-		// Route the request
-		int listenPort = g_fdToPort[client->getFd()];
-		RouteResult route = router.route(request, listenPort);
-		
-		std::string response;
-		
-		if (!route.matched) {
-			// Routing failed
-			std::cout << "  Route error: " << route.errorCode << " " << route.errorMessage << std::endl;
-			response = buildErrorResponse(route.errorCode, 
-			                              route.errorCode == 404 ? "Not Found" :
-			                              route.errorCode == 405 ? "Method Not Allowed" :
-			                              route.errorCode == 403 ? "Forbidden" : "Error",
-			                              route.errorMessage, false);
-			client->setKeepAlive(false);
-		} else if (router.hasRedirect(*route.location)) {
-			// Handle redirect
-			int code;
-			std::string url;
-			router.getRedirect(*route.location, code, url);
-			std::cout << "  Redirect: " << code << " -> " << url << std::endl;
-			response = buildRedirectResponse(code, url);
-			client->setKeepAlive(false);
-		} else {
-			// Success - for now, show routing info
-			// TODO: Actually serve files, handle CGI, etc.
-			std::cout << "  Routed to: " << route.location->getPath() 
-			          << " -> " << route.resolvedPath << std::endl;
-			response = buildRoutingInfoResponse(request, route);
-			client->setKeepAlive(request.isKeepAlive());
-		}
-		
-		client->appendToWriteBuffer(response);
+		processRequest(client, router, fileServer);
 		client->setState(STATE_WRITING_RESPONSE);
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
 	}
@@ -292,7 +295,8 @@ void handleClientWrite(Client* client, Epoll& epoll, ClientManager& clientManage
 }
 
 // Handle client event
-void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager, Router& router) {
+void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager, 
+                       Router& router, FileServer& fileServer) {
 	Client* client = clientManager.getClient(event.fd);
 	if (!client) {
 		return;
@@ -308,7 +312,7 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 	switch (client->getState()) {
 		case STATE_READING_REQUEST:
 			if (event.isReadable()) {
-				handleClientRead(client, epoll, clientManager, router);
+				handleClientRead(client, epoll, clientManager, router, fileServer);
 			}
 			break;
 			
@@ -361,9 +365,11 @@ int main(int argc, char** argv) {
 		
 		std::cout << "✓ Configuration parsed successfully!" << std::endl;
 		
-		// Create router
+		// Create router and file server
 		Router router(servers);
+		FileServer fileServer;
 		std::cout << "✓ Router initialized" << std::endl;
+		std::cout << "✓ File server initialized" << std::endl;
 		
 		Epoll epoll;
 		ClientManager clientManager(epoll);
@@ -420,7 +426,7 @@ int main(int argc, char** argv) {
 						}
 					}
 				} else if (clientManager.hasClient(fd)) {
-					handleClientEvent(events[i], epoll, clientManager, router);
+					handleClientEvent(events[i], epoll, clientManager, router, fileServer);
 				}
 			}
 			
