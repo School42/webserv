@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webserv Test Suite</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #eee;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            padding: 40px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 40px;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            background: linear-gradient(90deg, #00d4ff, #7b2ff7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            color: #888;
+            font-size: 1.1em;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1);
+        }
+        
+        .card h2 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .card h2 .icon {
+            font-size: 1.5em;
+        }
+        
+        .card p {
+            color: #aaa;
+            margin-bottom: 20px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: linear-gradient(90deg, #00d4ff, #7b2ff7);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: opacity 0.3s, transform 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.95em;
+            margin: 5px 5px 5px 0;
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-success {
+            background: linear-gradient(90deg, #00c853, #00e676);
+        }
+        
+        .btn-warning {
+            background: linear-gradient(90deg, #ff9800, #ffc107);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(90deg, #f44336, #e91e63);
+        }
+        
+        form {
+            margin-top: 15px;
+        }
+        
+        input[type="text"],
+        input[type="file"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #eee;
+            font-size: 0.95em;
+        }
+        
+        input[type="file"] {
+            padding: 10px;
+        }
+        
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #bbb;
+            font-size: 0.9em;
+        }
+        
+        .result-box {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85em;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .section-title {
+            font-size: 1.5em;
+            margin: 40px 0 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #333;
+            color: #00d4ff;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-success { background: #00c853; }
+        .status-error { background: #f44336; }
+        .status-pending { background: #ff9800; }
+        
+        .test-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .code-block {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85em;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            border-top: 1px solid #333;
+            margin-top: 40px;
+        }
+        
+        .tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            margin-left: 10px;
+        }
+        
+        .tag-python { background: #3776ab; }
+        .tag-php { background: #777bb4; }
+        .tag-shell { background: #4eaa25; }
+        .tag-get { background: #61affe; }
+        .tag-post { background: #49cc90; }
+        .tag-delete { background: #f93e3e; }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Webserv Test Suite</h1>
+            <p>Comprehensive testing dashboard for your HTTP server</p>
+        </header>
+
+        <!-- Static File Serving Tests -->
+        <h2 class="section-title">📁 Static File Serving</h2>
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">📄</span> Basic File Serving</h2>
+                <p>Test serving various static file types including HTML, text, JSON, and more.</p>
+                <div class="test-links">
+                    <a href="/" class="btn btn-secondary">Index Page</a>
+                    <a href="/test.txt" class="btn btn-secondary">Text File</a>
+                    <a href="/test.json" class="btn btn-secondary">JSON File</a>
+                    <a href="/nonexistent.html" class="btn btn-danger">404 Test</a>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">📂</span> Directory Listing</h2>
+                <p>Test autoindex functionality for directories with directory listing enabled.</p>
+                <div class="test-links">
+                    <a href="/images/" class="btn btn-secondary">Images Dir</a>
+                    <a href="/uploads/" class="btn btn-secondary">Uploads Dir</a>
+                    <a href="/cgi-bin/" class="btn btn-secondary">CGI-Bin Dir</a>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">🔄</span> Redirects</h2>
+                <p>Test HTTP redirects configured in the server.</p>
+                <div class="test-links">
+                    <a href="/old-page" class="btn btn-warning">301 Redirect</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- CGI Tests -->
+        <h2 class="section-title">⚙️ CGI Scripts</h2>
+        <div class="grid">
+            <!-- Python CGI -->
+            <div class="card">
+                <h2><span class="icon">🐍</span> Python CGI <span class="tag tag-python">Python</span></h2>
+                <p>Test Python CGI scripts with GET and POST methods.</p>
+                <div class="test-links">
+                    <a href="/cgi-bin/hello.py" class="btn"><span class="tag tag-get">GET</span> Hello</a>
+                    <a href="/cgi-bin/env.py" class="btn"><span class="tag tag-get">GET</span> Environment</a>
+                    <a href="/cgi-bin/time.py" class="btn"><span class="tag tag-get">GET</span> Time</a>
+                    <a href="/cgi-bin/calc.py?a=10&b=5&op=add" class="btn"><span class="tag tag-get">GET</span> Calculator</a>
+                </div>
+                <form action="/cgi-bin/form.py" method="post">
+                    <label>Test POST to Python:</label>
+                    <input type="text" name="name" placeholder="Your name">
+                    <input type="text" name="message" placeholder="Your message">
+                    <button type="submit" class="btn btn-success"><span class="tag tag-post">POST</span> Submit</button>
+                </form>
+            </div>
+            
+            <!-- PHP CGI -->
+            <div class="card">
+                <h2><span class="icon">🐘</span> PHP CGI <span class="tag tag-php">PHP</span></h2>
+                <p>Test PHP CGI scripts with various functionalities.</p>
+                <div class="test-links">
+                    <a href="/cgi-bin/hello.php" class="btn"><span class="tag tag-get">GET</span> Hello</a>
+                    <a href="/cgi-bin/info.php" class="btn"><span class="tag tag-get">GET</span> PHP Info</a>
+                    <a href="/cgi-bin/time.php" class="btn"><span class="tag tag-get">GET</span> Time</a>
+                    <a href="/cgi-bin/query.php?name=Test&value=123" class="btn"><span class="tag tag-get">GET</span> Query</a>
+                </div>
+                <form action="/cgi-bin/form.php" method="post">
+                    <label>Test POST to PHP:</label>
+                    <input type="text" name="username" placeholder="Username">
+                    <input type="text" name="email" placeholder="Email">
+                    <button type="submit" class="btn btn-success"><span class="tag tag-post">POST</span> Submit</button>
+                </form>
+            </div>
+            
+            <!-- Shell CGI -->
+            <div class="card">
+                <h2><span class="icon">🐚</span> Shell CGI <span class="tag tag-shell">Shell</span></h2>
+                <p>Test Shell/Bash CGI scripts.</p>
+                <div class="test-links">
+                    <a href="/cgi-bin/hello.sh" class="btn"><span class="tag tag-get">GET</span> Hello</a>
+                    <a href="/cgi-bin/sysinfo.sh" class="btn"><span class="tag tag-get">GET</span> System Info</a>
+                    <a href="/cgi-bin/date.sh" class="btn"><span class="tag tag-get">GET</span> Date/Time</a>
+                </div>
+            </div>
+            
+            <!-- CGI POST Test -->
+            <div class="card">
+                <h2><span class="icon">📤</span> CGI POST Data</h2>
+                <p>Test sending POST data to CGI scripts.</p>
+                <form action="/cgi-bin/post.py" method="post">
+                    <label>Send raw data to Python CGI:</label>
+                    <textarea name="data" placeholder="Enter some data to POST..."></textarea>
+                    <button type="submit" class="btn btn-success"><span class="tag tag-post">POST</span> Send Data</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- File Upload Tests -->
+        <h2 class="section-title">📤 File Uploads</h2>
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">📎</span> Single File Upload</h2>
+                <p>Upload a single file to the server.</p>
+                <form action="/upload" method="post" enctype="multipart/form-data">
+                    <label>Select a file:</label>
+                    <input type="file" name="file" required>
+                    <button type="submit" class="btn btn-success">Upload File</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">📚</span> Multiple File Upload</h2>
+                <p>Upload multiple files at once.</p>
+                <form action="/upload" method="post" enctype="multipart/form-data">
+                    <label>Select files:</label>
+                    <input type="file" name="file1">
+                    <input type="file" name="file2">
+                    <input type="file" name="file3">
+                    <button type="submit" class="btn btn-success">Upload Files</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">📝</span> Upload with Form Data</h2>
+                <p>Upload a file along with additional form fields.</p>
+                <form action="/upload" method="post" enctype="multipart/form-data">
+                    <label>Description:</label>
+                    <input type="text" name="description" placeholder="File description">
+                    <label>Category:</label>
+                    <select name="category">
+                        <option value="documents">Documents</option>
+                        <option value="images">Images</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <label>File:</label>
+                    <input type="file" name="file" required>
+                    <button type="submit" class="btn btn-success">Upload</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- HTTP Methods Tests -->
+        <h2 class="section-title">🔧 HTTP Methods</h2>
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">🧪</span> Method Tester</h2>
+                <p>Test different HTTP methods. Use browser console or curl for DELETE.</p>
+                <div class="code-block">
+# Test GET
+curl -X GET http://localhost:8080/
+
+# Test POST
+curl -X POST -d "data=test" http://localhost:8080/cgi-bin/post.py
+
+# Test DELETE (if enabled)
+curl -X DELETE http://localhost:8080/api/resource
+
+# Test with headers
+curl -H "X-Custom: value" http://localhost:8080/cgi-bin/env.py
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">🔍</span> Request Inspector</h2>
+                <p>View all request details including headers and environment.</p>
+                <div class="test-links">
+                    <a href="/cgi-bin/env.py" class="btn">Python Inspector</a>
+                    <a href="/cgi-bin/info.php" class="btn">PHP Inspector</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Pages Tests -->
+        <h2 class="section-title">❌ Error Handling</h2>
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">🚫</span> Error Pages</h2>
+                <p>Test various HTTP error responses.</p>
+                <div class="test-links">
+                    <a href="/this-page-does-not-exist" class="btn btn-danger">404 Not Found</a>
+                    <a href="/cgi-bin/nonexistent.py" class="btn btn-danger">404 CGI</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Reference -->
+        <h2 class="section-title">📖 Quick Reference</h2>
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">💻</span> Curl Commands</h2>
+                <div class="code-block">
+# Simple GET request
+curl http://localhost:8080/
+
+# POST with form data
+curl -X POST -d "key=value" http://localhost:8080/cgi-bin/post.py
+
+# POST with JSON
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"name":"test"}' http://localhost:8080/cgi-bin/post.py
+
+# File upload
+curl -X POST -F "file=@/path/to/file.txt" \
+     http://localhost:8080/upload
+
+# Multiple files
+curl -X POST -F "file1=@file1.txt" -F "file2=@file2.txt" \
+     http://localhost:8080/upload
+
+# View response headers
+curl -I http://localhost:8080/
+
+# Verbose output
+curl -v http://localhost:8080/
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">📋</span> Test Checklist</h2>
+                <div style="padding: 10px;">
+                    <p>✅ Static HTML files</p>
+                    <p>✅ Static text/JSON files</p>
+                    <p>✅ Directory listing (autoindex)</p>
+                    <p>✅ Custom error pages</p>
+                    <p>✅ URL redirects</p>
+                    <p>✅ Python CGI (GET/POST)</p>
+                    <p>✅ PHP CGI (GET/POST)</p>
+                    <p>✅ Shell CGI</p>
+                    <p>✅ Single file upload</p>
+                    <p>✅ Multiple file upload</p>
+                    <p>✅ Multipart form data</p>
+                    <p>✅ Query string parsing</p>
+                    <p>✅ POST body parsing</p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Webserv Test Suite | Built for 42 Project</p>
+            <p style="margin-top: 10px; font-size: 0.85em;">
+                Server running on <strong>localhost:8080</strong>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // Add some interactivity
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                // Add loading state
+                const btn = this.querySelector('button[type="submit"]');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '⏳ Processing...';
+                btn.disabled = true;
+                
+                // Re-enable after timeout (in case of issues)
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }, 5000);
+            });
+        });
+    </script>
+</body>
+</html>
