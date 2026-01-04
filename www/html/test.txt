@@ -1,0 +1,13 @@
+Hello, World!
+
+This is a plain text file served by webserv.
+
+Testing static file serving functionality.
+
+Line 1
+Line 2
+Line 3
+
+Special characters: <>&"'
+
+End of file.

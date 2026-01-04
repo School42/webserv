@@ -1,0 +1,23 @@
+{
+    "message": "Hello from webserv!",
+    "status": "success",
+    "server": "webserv/1.0",
+    "features": [
+        "Static file serving",
+        "CGI support",
+        "File uploads",
+        "Directory listing",
+        "Custom error pages",
+        "URL redirects"
+    ],
+    "test": {
+        "string": "test value",
+        "number": 42,
+        "boolean": true,
+        "null": null,
+        "array": [1, 2, 3],
+        "nested": {
+            "key": "value"
+        }
+    }
+}

@@ -11,6 +11,7 @@
 #include "Client.hpp"
 #include "ClientManager.hpp"
 #include "HttpRequest.hpp"
+#include "Response.hpp"
 #include "Router.hpp"
 #include "FileServer.hpp"
 #include "CgiHandler.hpp"
@@ -56,53 +57,6 @@ Socket* findListenSocket(int fd, const std::vector<Socket*>& listenSockets) {
 	return NULL;
 }
 
-// Build HTTP response
-std::string buildResponse(int statusCode, const std::string& statusText,
-                          const std::string& contentType, const std::string& body,
-                          bool keepAlive, const std::string& extraHeaders = "") {
-	std::stringstream response;
-	response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
-	         << "Content-Type: " << contentType << "\r\n"
-	         << "Content-Length: " << body.size() << "\r\n"
-	         << "Server: webserv/1.0\r\n";
-	
-	if (keepAlive) {
-		response << "Connection: keep-alive\r\n";
-	} else {
-		response << "Connection: close\r\n";
-	}
-	
-	if (!extraHeaders.empty()) {
-		response << extraHeaders;
-	}
-	
-	response << "\r\n" << body;
-	
-	return response.str();
-}
-
-// Build redirect response
-std::string buildRedirectResponse(int code, const std::string& location, bool keepAlive) {
-	std::string statusText;
-	switch (code) {
-		case 301: statusText = "Moved Permanently"; break;
-		case 302: statusText = "Found"; break;
-		case 303: statusText = "See Other"; break;
-		case 307: statusText = "Temporary Redirect"; break;
-		case 308: statusText = "Permanent Redirect"; break;
-		default:  statusText = "Redirect"; break;
-	}
-	
-	std::stringstream body;
-	body << "<!DOCTYPE html><html><head><title>" << code << " " << statusText << "</title></head>"
-	     << "<body><h1>" << code << " " << statusText << "</h1>"
-	     << "<p>Redirecting to <a href=\"" << location << "\">" << location << "</a></p></body></html>";
-	
-	std::string extraHeaders = "Location: " + location + "\r\n";
-	
-	return buildResponse(code, statusText, "text/html", body.str(), keepAlive, extraHeaders);
-}
-
 // Handle new connection
 void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 	std::string clientAddr;
@@ -127,7 +81,7 @@ void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 void processRequest(Client* client, Router& router, FileServer& fileServer, 
                     CgiHandler& cgiHandler, UploadHandler& uploadHandler) {
 	HttpRequest& request = client->getRequest();
-	std::string response;
+	Response response;
 	bool keepAlive = request.isKeepAlive();
 	
 	std::cout << "Request: " << request.getMethod() << " " << request.getUri() 
@@ -143,22 +97,12 @@ void processRequest(Client* client, Router& router, FileServer& fileServer,
 		
 		if (route.server) {
 			FileResult errPage = fileServer.serveErrorPage(*route.server, route.errorCode);
-			response = buildResponse(errPage.statusCode, errPage.statusText,
-			                         errPage.contentType, errPage.body, false);
+			response.setStatusCode(errPage.statusCode);
+			response.setStatusText(errPage.statusText);
+			response.setContentType(errPage.contentType);
+			response.setBody(errPage.body);
 		} else {
-			// No server found - use default error page
-			FileResult errPage;
-			errPage.statusCode = route.errorCode;
-			errPage.statusText = route.errorCode == 404 ? "Not Found" :
-			                     route.errorCode == 405 ? "Method Not Allowed" :
-			                     route.errorCode == 403 ? "Forbidden" : "Error";
-			std::stringstream errBody;
-			errBody << "<!DOCTYPE html><html><head><title>" << route.errorCode 
-			        << "</title></head><body><h1>" << route.errorCode << " " 
-			        << errPage.statusText << "</h1><p>" << route.errorMessage 
-			        << "</p><hr><p>webserv</p></body></html>";
-			response = buildResponse(route.errorCode, errPage.statusText,
-			                         "text/html", errBody.str(), false);
+			response = Response::error(route.errorCode, route.errorMessage);
 		}
 		keepAlive = false;
 		
@@ -168,7 +112,7 @@ void processRequest(Client* client, Router& router, FileServer& fileServer,
 		std::string url;
 		router.getRedirect(*route.location, code, url);
 		std::cout << "  Redirect: " << code << " -> " << url << std::endl;
-		response = buildRedirectResponse(code, url, false);
+		response = Response::redirect(code, url);
 		keepAlive = false;
 		
 	} else {
@@ -185,30 +129,29 @@ void processRequest(Client* client, Router& router, FileServer& fileServer,
 				
 				// Generate success response
 				std::stringstream body;
-				body << "<!DOCTYPE html><html><head><title>Upload Successful</title></head>"
-				     << "<body><h1>Upload Successful</h1>"
-				     << "<p>Uploaded " << uploadResult.files.size() << " file(s):</p><ul>";
+				body << "<!DOCTYPE html>\n"
+				     << "<html>\n"
+				     << "<head><title>Upload Successful</title></head>\n"
+				     << "<body>\n"
+				     << "<h1>Upload Successful</h1>\n"
+				     << "<p>Uploaded " << uploadResult.files.size() << " file(s):</p>\n"
+				     << "<ul>\n";
 				
 				for (size_t i = 0; i < uploadResult.files.size(); ++i) {
 					body << "<li>" << uploadResult.files[i].filename 
-					     << " (" << uploadResult.files[i].size << " bytes)</li>";
+					     << " (" << uploadResult.files[i].size << " bytes)</li>\n";
 				}
 				
-				body << "</ul></body></html>";
+				body << "</ul>\n"
+				     << "<p><a href=\"/\">Back to Home</a></p>\n"
+				     << "</body>\n"
+				     << "</html>\n";
 				
-				response = buildResponse(201, "Created", "text/html", body.str(), keepAlive);
+				response = Response::created(body.str());
 			} else {
 				std::cout << "  Upload error: " << uploadResult.statusCode 
 				          << " " << uploadResult.errorMessage << std::endl;
-				
-				std::stringstream body;
-				body << "<!DOCTYPE html><html><head><title>Upload Failed</title></head>"
-				     << "<body><h1>" << uploadResult.statusCode << " " 
-				     << uploadResult.statusText << "</h1>"
-				     << "<p>" << uploadResult.errorMessage << "</p></body></html>";
-				
-				response = buildResponse(uploadResult.statusCode, uploadResult.statusText,
-				                         "text/html", body.str(), false);
+				response = Response::error(uploadResult.statusCode, uploadResult.errorMessage);
 				keepAlive = false;
 			}
 			
@@ -228,24 +171,25 @@ void processRequest(Client* client, Router& router, FileServer& fileServer,
 				          << cgiResult.statusText << " (" << cgiResult.body.size() 
 				          << " bytes)" << std::endl;
 				
-				// Build extra headers from CGI response
-				std::string extraHeaders;
+				response.setStatusCode(cgiResult.statusCode);
+				response.setStatusText(cgiResult.statusText);
+				response.setContentType(cgiResult.contentType);
+				response.setBody(cgiResult.body);
+				
+				// Add CGI headers
 				for (std::map<std::string, std::string>::iterator it = cgiResult.headers.begin();
 				     it != cgiResult.headers.end(); ++it) {
-					// Skip Content-Type as it's handled separately
 					if (it->first != "Content-Type") {
-						extraHeaders += it->first + ": " + it->second + "\r\n";
+						response.setHeader(it->first, it->second);
 					}
 				}
-				
-				response = buildResponse(cgiResult.statusCode, cgiResult.statusText,
-				                         cgiResult.contentType, cgiResult.body, 
-				                         keepAlive, extraHeaders);
 			} else {
 				std::cout << "  CGI error: " << cgiResult.statusCode << " "
 				          << cgiResult.errorMessage << std::endl;
-				response = buildResponse(cgiResult.statusCode, cgiResult.statusText,
-				                         cgiResult.contentType, cgiResult.body, false);
+				response.setStatusCode(cgiResult.statusCode);
+				response.setStatusText(cgiResult.statusText);
+				response.setContentType(cgiResult.contentType);
+				response.setBody(cgiResult.body);
 				keepAlive = false;
 			}
 		} else {
@@ -256,26 +200,32 @@ void processRequest(Client* client, Router& router, FileServer& fileServer,
 			if (fileResult.statusCode == 301 && !fileResult.redirectPath.empty()) {
 				// Directory redirect (add trailing slash)
 				std::cout << "  Directory redirect: " << fileResult.redirectPath << std::endl;
-				response = buildRedirectResponse(301, fileResult.redirectPath, keepAlive);
+				response = Response::redirect(301, fileResult.redirectPath);
 			} else if (fileResult.success) {
 				// Success - serve file
 				std::cout << "  Serving: " << fileResult.contentType 
 				          << " (" << fileResult.body.size() << " bytes)" << std::endl;
-				response = buildResponse(fileResult.statusCode, fileResult.statusText,
-				                         fileResult.contentType, fileResult.body, keepAlive);
+				response.setStatusCode(fileResult.statusCode);
+				response.setStatusText(fileResult.statusText);
+				response.setContentType(fileResult.contentType);
+				response.setBody(fileResult.body);
 			} else {
 				// Error - try custom error page
 				std::cout << "  File error: " << fileResult.statusCode 
 				          << " " << fileResult.errorMessage << std::endl;
 				FileResult errPage = fileServer.serveErrorPage(*route.server, fileResult.statusCode);
-				response = buildResponse(fileResult.statusCode, fileResult.statusText,
-				                         errPage.contentType, errPage.body, false);
+				response.setStatusCode(fileResult.statusCode);
+				response.setStatusText(fileResult.statusText);
+				response.setContentType(errPage.contentType);
+				response.setBody(errPage.body);
 				keepAlive = false;
 			}
 		}
 	}
 	
-	client->appendToWriteBuffer(response);
+	response.setKeepAlive(keepAlive);
+	response.setHeader("Server", "webserv/1.0");
+	client->appendToWriteBuffer(response.build());
 	client->setKeepAlive(keepAlive);
 }
 
@@ -316,13 +266,10 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 		std::cerr << "Parse error from " << client->getAddress() << ": " 
 		          << request.getErrorMessage() << std::endl;
 		
-		std::stringstream errBody;
-		errBody << "<!DOCTYPE html><html><head><title>400 Bad Request</title></head>"
-		        << "<body><h1>400 Bad Request</h1><p>" << request.getErrorMessage() 
-		        << "</p><hr><p>webserv</p></body></html>";
+		Response response = Response::error(400, request.getErrorMessage());
+		response.setHeader("Server", "webserv/1.0");
 		
-		client->appendToWriteBuffer(
-			buildResponse(400, "Bad Request", "text/html", errBody.str(), false));
+		client->appendToWriteBuffer(response.build());
 		client->setState(STATE_WRITING_RESPONSE);
 		client->setKeepAlive(false);
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);

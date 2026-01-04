@@ -450,7 +450,7 @@ curl -X POST -F "file=@/path/to/file.txt" \
      http://localhost:8080/upload
 
 # Multiple files
-curl -X POST -F "file1=@file1.txt" -F "file2=@file2.txt" \
+curl -X POST -F "<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="15737c7970242855737c7970243b616d61">[email&#160;protected]</a>" -F "<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f6909f9a93c4cbb6909f9a93c4d8828e82">[email&#160;protected]</a>" \
      http://localhost:8080/upload
 
 # View response headers
@@ -489,23 +489,11 @@ curl -v http://localhost:8080/
         </footer>
     </div>
 
-    <script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
         // Add some interactivity
         document.querySelectorAll('form').forEach(form => {
             form.addEventListener('submit', function(e) {
                 // Add loading state
                 const btn = this.querySelector('button[type="submit"]');
                 const originalText = btn.innerHTML;
-                btn.innerHTML = '‚è≥ Processing...';
-                btn.disabled = true;
-                
-                // Re-enable after timeout (in case of issues)
-                setTimeout(() => {
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                }, 5000);
-            });
-        });
-    </script>
-</body>
-</html>
+                btn.innerHTML = '‚è

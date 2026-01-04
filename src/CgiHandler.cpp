@@ -50,12 +50,33 @@ std::string CgiHandler::getInterpreter(const std::string& scriptPath,
 	if (dotPos != std::string::npos) {
 		std::string ext = scriptPath.substr(dotPos);
 		
-		// Common interpreters
-		if (ext == ".py") return "/usr/bin/python3";
-		if (ext == ".pl") return "/usr/bin/perl";
-		if (ext == ".rb") return "/usr/bin/ruby";
-		if (ext == ".php") return "/usr/bin/php-cgi";
-		if (ext == ".sh") return "/bin/sh";
+		// Common interpreters - try multiple paths
+		if (ext == ".py") {
+			if (isExecutable("/usr/bin/python3")) return "/usr/bin/python3";
+			if (isExecutable("/usr/bin/python")) return "/usr/bin/python";
+			return "python3";
+		}
+		if (ext == ".pl") {
+			if (isExecutable("/usr/bin/perl")) return "/usr/bin/perl";
+			return "perl";
+		}
+		if (ext == ".rb") {
+			if (isExecutable("/usr/bin/ruby")) return "/usr/bin/ruby";
+			return "ruby";
+		}
+		if (ext == ".php") {
+			// Try php-cgi first (proper CGI mode), then php
+			if (isExecutable("/usr/bin/php-cgi")) return "/usr/bin/php-cgi";
+			if (isExecutable("/usr/bin/php")) return "/usr/bin/php";
+			if (isExecutable("/usr/local/bin/php-cgi")) return "/usr/local/bin/php-cgi";
+			if (isExecutable("/usr/local/bin/php")) return "/usr/local/bin/php";
+			return "php";
+		}
+		if (ext == ".sh") {
+			if (isExecutable("/bin/bash")) return "/bin/bash";
+			if (isExecutable("/bin/sh")) return "/bin/sh";
+			return "sh";
+		}
 	}
 	
 	// Default: try to execute directly (script must have shebang)
@@ -355,6 +376,7 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 	}
 	
 	std::string scriptPath = route.resolvedPath;
+	std::cout << "  [CGI] Script path: " << scriptPath << std::endl;
 	
 	// Check if script exists
 	struct stat st;
@@ -363,11 +385,13 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 		result.statusText = "Not Found";
 		result.errorMessage = "CGI script not found: " + scriptPath;
 		result.body = generateErrorPage(404, result.errorMessage);
+		std::cout << "  [CGI] ERROR: " << result.errorMessage << std::endl;
 		return result;
 	}
 	
 	// Get interpreter
 	std::string interpreter = getInterpreter(scriptPath, *route.location);
+	std::cout << "  [CGI] Interpreter: " << (interpreter.empty() ? "(direct)" : interpreter) << std::endl;
 	
 	// If no interpreter, script must be executable
 	if (interpreter.empty() && !isExecutable(scriptPath)) {
@@ -436,6 +460,9 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 		// Redirect stdout to pipeOut
 		close(pipeOut[0]);  // Close read end
 		dup2(pipeOut[1], STDOUT_FILENO);
+		
+		// Also redirect stderr to stdout so we can capture error messages
+		dup2(pipeOut[1], STDERR_FILENO);
 		close(pipeOut[1]);
 		
 		// Change to script directory
@@ -549,9 +576,17 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 	waitpid(pid, &status, 0);
 	
 	// Check exit status
-	if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-		// Script exited with error
-		std::cerr << "CGI script exited with status " << WEXITSTATUS(status) << std::endl;
+	if (WIFEXITED(status)) {
+		std::cout << "  [CGI] Process exited with status: " << WEXITSTATUS(status) << std::endl;
+	} else if (WIFSIGNALED(status)) {
+		std::cout << "  [CGI] Process killed by signal: " << WTERMSIG(status) << std::endl;
+	}
+	
+	std::cout << "  [CGI] Output size: " << output.size() << " bytes" << std::endl;
+	if (output.size() < 500) {
+		std::cout << "  [CGI] Output: " << output << std::endl;
+	} else {
+		std::cout << "  [CGI] Output (first 500 chars): " << output.substr(0, 500) << std::endl;
 	}
 	
 	// Parse CGI output
@@ -565,15 +600,20 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 		result.statusText = "Bad Gateway";
 		result.errorMessage = "Failed to parse CGI output";
 		result.body = generateErrorPage(502, result.errorMessage);
+		std::cout << "  [CGI] ERROR: Failed to parse output" << std::endl;
 		return result;
 	}
+	
+	std::cout << "  [CGI] Parsed body size: " << responseBody.size() << " bytes" << std::endl;
 	
 	// Set content type
 	std::map<std::string, std::string>::iterator ctIt = result.headers.find("Content-Type");
 	if (ctIt != result.headers.end()) {
 		result.contentType = ctIt->second;
+		std::cout << "  [CGI] Content-Type: " << result.contentType << std::endl;
 	} else {
 		result.contentType = "text/html";  // Default
+		std::cout << "  [CGI] Content-Type: (default) text/html" << std::endl;
 	}
 	
 	result.success = true;
