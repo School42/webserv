@@ -11,6 +11,7 @@
 #include "Client.hpp"
 #include "ClientManager.hpp"
 #include "HttpRequest.hpp"
+#include "Router.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "ConfigError.hpp"
@@ -19,9 +20,12 @@
 static volatile bool g_running = true;
 
 // Timeout constants
-static const time_t CLIENT_TIMEOUT = 60;  // 60 seconds
-static const int EPOLL_TIMEOUT = 1000;    // 1 second (for timeout checks)
+static const time_t CLIENT_TIMEOUT = 60;
+static const int EPOLL_TIMEOUT = 1000;
 static const int MAX_KEEPALIVE_REQUESTS = 100;
+
+// Map listen socket fd to port
+static std::map<int, int> g_fdToPort;
 
 void signalHandler(int signum) {
 	(void)signum;
@@ -49,71 +53,111 @@ Socket* findListenSocket(int fd, const std::vector<Socket*>& listenSockets) {
 	return NULL;
 }
 
-// Build a simple error response
-std::string buildErrorResponse(int statusCode, const std::string& statusText, const std::string& message) {
-	std::stringstream body;
-	body << "<html><head><title>" << statusCode << " " << statusText << "</title></head>"
-	     << "<body><h1>" << statusCode << " " << statusText << "</h1>"
-	     << "<p>" << message << "</p></body></html>";
-	
-	std::string bodyStr = body.str();
-	
+// Build HTTP response
+std::string buildResponse(int statusCode, const std::string& statusText,
+                          const std::string& contentType, const std::string& body,
+                          bool keepAlive, const std::string& extraHeaders = "") {
 	std::stringstream response;
 	response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
-	         << "Content-Type: text/html\r\n"
-	         << "Content-Length: " << bodyStr.size() << "\r\n"
-	         << "Connection: close\r\n"
-	         << "\r\n"
-	         << bodyStr;
+	         << "Content-Type: " << contentType << "\r\n"
+	         << "Content-Length: " << body.size() << "\r\n";
 	
-	return response.str();
-}
-
-// Build a simple success response
-std::string buildSuccessResponse(const HttpRequest& request) {
-	std::stringstream body;
-	body << "<html><head><title>Request Received</title></head><body>"
-	     << "<h1>Request Received</h1>"
-	     << "<p><strong>Method:</strong> " << request.getMethod() << "</p>"
-	     << "<p><strong>URI:</strong> " << request.getUri() << "</p>"
-	     << "<p><strong>Path:</strong> " << request.getPath() << "</p>"
-	     << "<p><strong>Query:</strong> " << request.getQueryString() << "</p>"
-	     << "<p><strong>Host:</strong> " << request.getHost() << "</p>"
-	     << "<p><strong>HTTP Version:</strong> " << request.getHttpVersion() << "</p>"
-	     << "<h2>Headers:</h2><ul>";
-	
-	const std::map<std::string, std::string>& headers = request.getHeaders();
-	for (std::map<std::string, std::string>::const_iterator it = headers.begin();
-	     it != headers.end(); ++it) {
-		body << "<li><strong>" << it->first << ":</strong> " << it->second << "</li>";
-	}
-	body << "</ul>";
-	
-	if (!request.getBody().empty()) {
-		body << "<h2>Body:</h2><pre>" << request.getBody() << "</pre>";
-	}
-	
-	body << "</body></html>";
-	
-	std::string bodyStr = body.str();
-	
-	std::stringstream response;
-	response << "HTTP/1.1 200 OK\r\n"
-	         << "Content-Type: text/html\r\n"
-	         << "Content-Length: " << bodyStr.size() << "\r\n";
-	
-	if (request.isKeepAlive()) {
+	if (keepAlive) {
 		response << "Connection: keep-alive\r\n";
 	} else {
 		response << "Connection: close\r\n";
 	}
 	
-	response << "\r\n" << bodyStr;
+	if (!extraHeaders.empty()) {
+		response << extraHeaders;
+	}
+	
+	response << "\r\n" << body;
 	
 	return response.str();
 }
 
-// Handle new connection on listen socket
+// Build error response
+std::string buildErrorResponse(int statusCode, const std::string& statusText,
+                               const std::string& message, bool keepAlive) {
+	std::stringstream body;
+	body << "<!DOCTYPE html><html><head><title>" << statusCode << " " << statusText << "</title></head>"
+	     << "<body><h1>" << statusCode << " " << statusText << "</h1>"
+	     << "<p>" << message << "</p><hr><p>webserv</p></body></html>";
+	
+	return buildResponse(statusCode, statusText, "text/html", body.str(), keepAlive);
+}
+
+// Build redirect response
+std::string buildRedirectResponse(int code, const std::string& location) {
+	std::string statusText;
+	switch (code) {
+		case 301: statusText = "Moved Permanently"; break;
+		case 302: statusText = "Found"; break;
+		case 303: statusText = "See Other"; break;
+		case 307: statusText = "Temporary Redirect"; break;
+		case 308: statusText = "Permanent Redirect"; break;
+		default:  statusText = "Redirect"; break;
+	}
+	
+	std::stringstream body;
+	body << "<!DOCTYPE html><html><head><title>" << code << " " << statusText << "</title></head>"
+	     << "<body><h1>" << code << " " << statusText << "</h1>"
+	     << "<p>Redirecting to <a href=\"" << location << "\">" << location << "</a></p></body></html>";
+	
+	std::string extraHeaders = "Location: " + location + "\r\n";
+	
+	return buildResponse(code, statusText, "text/html", body.str(), false, extraHeaders);
+}
+
+// Build success response showing routing info (for testing)
+std::string buildRoutingInfoResponse(const HttpRequest& request, const RouteResult& route) {
+	std::stringstream body;
+	body << "<!DOCTYPE html><html><head><title>Routing Info</title></head><body>"
+	     << "<h1>Request Routed Successfully</h1>"
+	     << "<h2>Request Info</h2>"
+	     << "<p><strong>Method:</strong> " << request.getMethod() << "</p>"
+	     << "<p><strong>URI:</strong> " << request.getUri() << "</p>"
+	     << "<p><strong>Path:</strong> " << request.getPath() << "</p>"
+	     << "<p><strong>Query:</strong> " << request.getQueryString() << "</p>"
+	     << "<p><strong>Host:</strong> " << request.getHost() << "</p>"
+	     << "<h2>Routing Result</h2>"
+	     << "<p><strong>Matched Server:</strong> ";
+	
+	if (route.server) {
+		const std::vector<std::string>& names = route.server->getServerNames();
+		if (names.empty()) {
+			body << "(default)";
+		} else {
+			body << names[0];
+		}
+	}
+	
+	body << "</p><p><strong>Matched Location:</strong> ";
+	if (route.location) {
+		body << route.location->getPath();
+	}
+	
+	body << "</p><p><strong>Resolved Path:</strong> " << route.resolvedPath << "</p>"
+	     << "<p><strong>Root:</strong> " << (route.location ? route.location->getRoot() : "(none)") << "</p>"
+	     << "<p><strong>Allowed Methods:</strong> ";
+	
+	if (route.location) {
+		const std::vector<std::string>& methods = route.location->getAllowedMethods();
+		for (size_t i = 0; i < methods.size(); ++i) {
+			body << methods[i];
+			if (i < methods.size() - 1) body << ", ";
+		}
+	}
+	
+	body << "</p><p><strong>Is CGI:</strong> " 
+	     << (route.location && !route.location->getCgiExtension().empty() ? "Possible" : "No")
+	     << "</p></body></html>";
+	
+	return buildResponse(200, "OK", "text/html", body.str(), request.isKeepAlive());
+}
+
+// Handle new connection
 void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 	std::string clientAddr;
 	int clientPort;
@@ -122,39 +166,43 @@ void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 	
 	if (clientFd >= 0) {
 		Client* client = clientManager.addClient(clientFd, clientAddr, clientPort);
+		// Store which port this client connected to
+		g_fdToPort[clientFd] = listenSocket->getPort();
+		
 		std::cout << "New connection from " << clientAddr << ":" << clientPort 
-		          << " (fd: " << clientFd << ") - Total clients: " 
+		          << " on port " << listenSocket->getPort()
+		          << " (fd: " << clientFd << ") - Total: " 
 		          << clientManager.getClientCount() << std::endl;
 		(void)client;
 	}
 }
 
 // Handle client read event
-void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager) {
+void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager, Router& router) {
 	ssize_t bytesRead = client->readData();
 	
 	if (bytesRead < 0) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			std::cerr << "Error reading from client " << client->getFd() 
 			          << ": " << std::strerror(errno) << std::endl;
+			g_fdToPort.erase(client->getFd());
 			clientManager.removeClient(client->getFd());
 		}
 		return;
 	}
 	
 	if (bytesRead == 0) {
-		std::cout << "Client " << client->getAddress() << ":" << client->getPort() 
-		          << " closed connection" << std::endl;
+		std::cout << "Client " << client->getAddress() << " closed connection" << std::endl;
+		g_fdToPort.erase(client->getFd());
 		clientManager.removeClient(client->getFd());
 		return;
 	}
 	
-	// Parse the HTTP request
+	// Parse HTTP request
 	HttpRequest& request = client->getRequest();
 	size_t bytesConsumed = 0;
 	HttpParseResult result = request.parse(client->getReadBuffer(), bytesConsumed);
 	
-	// Remove consumed bytes from buffer
 	if (bytesConsumed > 0) {
 		std::string& buffer = const_cast<std::string&>(client->getReadBuffer());
 		buffer.erase(0, bytesConsumed);
@@ -164,7 +212,8 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 		std::cerr << "Parse error from " << client->getAddress() << ": " 
 		          << request.getErrorMessage() << std::endl;
 		
-		client->appendToWriteBuffer(buildErrorResponse(400, "Bad Request", request.getErrorMessage()));
+		client->appendToWriteBuffer(
+			buildErrorResponse(400, "Bad Request", request.getErrorMessage(), false));
 		client->setState(STATE_WRITING_RESPONSE);
 		client->setKeepAlive(false);
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
@@ -175,16 +224,42 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 		std::cout << "Request: " << request.getMethod() << " " << request.getUri() 
 		          << " from " << client->getAddress() << std::endl;
 		
-		// TODO: Route request to proper handler based on config
-		// For now, just return request info
-		std::string response = buildSuccessResponse(request);
+		// Route the request
+		int listenPort = g_fdToPort[client->getFd()];
+		RouteResult route = router.route(request, listenPort);
+		
+		std::string response;
+		
+		if (!route.matched) {
+			// Routing failed
+			std::cout << "  Route error: " << route.errorCode << " " << route.errorMessage << std::endl;
+			response = buildErrorResponse(route.errorCode, 
+			                              route.errorCode == 404 ? "Not Found" :
+			                              route.errorCode == 405 ? "Method Not Allowed" :
+			                              route.errorCode == 403 ? "Forbidden" : "Error",
+			                              route.errorMessage, false);
+			client->setKeepAlive(false);
+		} else if (router.hasRedirect(*route.location)) {
+			// Handle redirect
+			int code;
+			std::string url;
+			router.getRedirect(*route.location, code, url);
+			std::cout << "  Redirect: " << code << " -> " << url << std::endl;
+			response = buildRedirectResponse(code, url);
+			client->setKeepAlive(false);
+		} else {
+			// Success - for now, show routing info
+			// TODO: Actually serve files, handle CGI, etc.
+			std::cout << "  Routed to: " << route.location->getPath() 
+			          << " -> " << route.resolvedPath << std::endl;
+			response = buildRoutingInfoResponse(request, route);
+			client->setKeepAlive(request.isKeepAlive());
+		}
 		
 		client->appendToWriteBuffer(response);
 		client->setState(STATE_WRITING_RESPONSE);
-		client->setKeepAlive(request.isKeepAlive());
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
 	}
-	// If PARSE_INCOMPLETE, wait for more data
 }
 
 // Handle client write event
@@ -195,35 +270,37 @@ void handleClientWrite(Client* client, Epoll& epoll, ClientManager& clientManage
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			std::cerr << "Error writing to client " << client->getFd() 
 			          << ": " << std::strerror(errno) << std::endl;
+			g_fdToPort.erase(client->getFd());
 			clientManager.removeClient(client->getFd());
 		}
 		return;
 	}
 	
 	if (!client->hasDataToWrite()) {
-		std::cout << "Response sent to " << client->getAddress() << ":" << client->getPort() << std::endl;
+		std::cout << "Response sent to " << client->getAddress() << std::endl;
 		
 		if (client->isKeepAlive() && client->getRequestCount() < MAX_KEEPALIVE_REQUESTS) {
 			client->incrementRequestCount();
 			client->reset();
 			epoll.modify(client->getFd(), EVENT_READ | EVENT_RDHUP);
-			std::cout << "  (keeping connection alive, request #" << client->getRequestCount() << ")" << std::endl;
 		} else {
 			client->setState(STATE_DONE);
+			g_fdToPort.erase(client->getFd());
 			clientManager.removeClient(client->getFd());
 		}
 	}
 }
 
 // Handle client event
-void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager) {
+void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager, Router& router) {
 	Client* client = clientManager.getClient(event.fd);
 	if (!client) {
 		return;
 	}
 	
 	if (event.isError() || event.isHangup() || event.isPeerClosed()) {
-		std::cout << "Client " << client->getAddress() << " disconnected or error" << std::endl;
+		std::cout << "Client " << client->getAddress() << " disconnected" << std::endl;
+		g_fdToPort.erase(event.fd);
 		clientManager.removeClient(event.fd);
 		return;
 	}
@@ -231,7 +308,7 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 	switch (client->getState()) {
 		case STATE_READING_REQUEST:
 			if (event.isReadable()) {
-				handleClientRead(client, epoll, clientManager);
+				handleClientRead(client, epoll, clientManager, router);
 			}
 			break;
 			
@@ -242,11 +319,9 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 			break;
 			
 		case STATE_PROCESSING:
-			// Will be used for CGI later
-			break;
-			
 		case STATE_DONE:
 		case STATE_ERROR:
+			g_fdToPort.erase(event.fd);
 			clientManager.removeClient(event.fd);
 			break;
 	}
@@ -285,15 +360,15 @@ int main(int argc, char** argv) {
 		std::vector<ServerConfig> servers = parser.parse();
 		
 		std::cout << "✓ Configuration parsed successfully!" << std::endl;
-		std::cout << "Total servers: " << servers.size() << std::endl;
+		
+		// Create router
+		Router router(servers);
+		std::cout << "✓ Router initialized" << std::endl;
 		
 		Epoll epoll;
-		std::cout << "✓ Epoll instance created" << std::endl;
-		
 		ClientManager clientManager(epoll);
 		
 		std::vector<Socket*> listenSockets;
-		std::map<int, int> fdToServerIndex;
 		
 		for (size_t i = 0; i < servers.size(); ++i) {
 			const std::vector<ListenAddress>& addrs = servers[i].getListenAddresses();
@@ -318,7 +393,6 @@ int main(int argc, char** argv) {
 				sock->listen();
 				
 				epoll.add(sock->getFd(), EVENT_READ);
-				fdToServerIndex[sock->getFd()] = static_cast<int>(i);
 				listenSockets.push_back(sock);
 				
 				std::cout << "✓ Listening on " 
@@ -346,7 +420,7 @@ int main(int argc, char** argv) {
 						}
 					}
 				} else if (clientManager.hasClient(fd)) {
-					handleClientEvent(events[i], epoll, clientManager);
+					handleClientEvent(events[i], epoll, clientManager, router);
 				}
 			}
 			
@@ -362,7 +436,6 @@ int main(int argc, char** argv) {
 		for (size_t i = 0; i < listenSockets.size(); ++i) {
 			delete listenSockets[i];
 		}
-		listenSockets.clear();
 		
 		std::cout << "✓ Server stopped gracefully" << std::endl;
 		return 0;
