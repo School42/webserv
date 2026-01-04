@@ -4,6 +4,8 @@
 Lexer::Lexer(const std::string& input)
 	: _input(input), _pos(0), _line(1), _col(1) {}
 
+Lexer::~Lexer() {}
+
 char Lexer::currentChar() const {
 	if (_pos >= _input.size())
 		return '\0';
@@ -13,7 +15,7 @@ char Lexer::currentChar() const {
 char Lexer::advance() {
 	char c = currentChar();
 	_pos++;
-
+	
 	if (c == '\n') {
 		_line++;
 		_col = 1;
@@ -24,8 +26,7 @@ char Lexer::advance() {
 }
 
 void Lexer::skipWhitespace() {
-	while (std::isspace(currentChar()))
-	{
+	while (std::isspace(static_cast<unsigned char>(currentChar()))) {
 		advance();
 	}
 }
@@ -33,8 +34,7 @@ void Lexer::skipWhitespace() {
 void Lexer::skipComments() {
 	if (currentChar() == '#') {
 		advance();
-		while (currentChar() != '\n' && currentChar() != '\0')
-		{
+		while (currentChar() != '\n' && currentChar() != '\0') {
 			advance();
 		}
 	}
@@ -45,22 +45,22 @@ Token Lexer::makeToken(TokenType type, const std::string& value) {
 	tok.type = type;
 	tok.value = value;
 	tok.line = _line;
-	tok.col = _col - value.length();
+	tok.col = static_cast<int>(_col - value.length());
 	return tok;
 }
 
 Token Lexer::lexIdentifier() {
 	size_t start = _pos;
-
-	while (std::isalnum(currentChar()) ||
-			currentChar() == '_' ||
-			currentChar() == '/' ||
-			currentChar() == '.' ||
-			currentChar() == '-')
-	{
+	
+	while (std::isalnum(static_cast<unsigned char>(currentChar())) ||
+	       currentChar() == '_' ||
+	       currentChar() == '/' ||
+	       currentChar() == '.' ||
+	       currentChar() == '-' ||
+	       currentChar() == ':') {
 		advance();
 	}
-
+	
 	return makeToken(TOK_IDENT, _input.substr(start, _pos - start));
 }
 
@@ -73,22 +73,22 @@ Token Lexer::nextToken() {
 		}
 		break;
 	}
+	
 	char c = currentChar();
-
+	
 	if (c == '\0')
 		return makeToken(TOK_EOF, "");
 	
-	if (std::isalnum(c) || c == '/' || c == '.' || c == '-' || c == '_')
+	if (std::isalnum(static_cast<unsigned char>(c)) || 
+	    c == '/' || c == '.' || c == '-' || c == '_' || c == ':')
 		return lexIdentifier();
 	
 	advance();
-
-	switch (c)
-	{
+	
+	switch (c) {
 		case '{': return makeToken(TOK_LBRACE, "{");
 		case '}': return makeToken(TOK_RBRACE, "}");
 		case ';': return makeToken(TOK_SEMICOLON, ";");
-
 		default:
 			return makeToken(TOK_ERROR, std::string(1, c));
 	}
@@ -98,12 +98,12 @@ Token Lexer::peekToken() {
 	size_t savedPos = _pos;
 	int savedLine = _line;
 	int savedCol = _col;
-
+	
 	Token tok = nextToken();
-
+	
 	_pos = savedPos;
 	_line = savedLine;
 	_col = savedCol;
-
+	
 	return tok;
 }

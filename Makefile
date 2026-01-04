@@ -19,12 +19,12 @@ PURPLE = \033[0;35m
 NC = \033[0m
 
 all: $(NAME)
-	@printf "$(GREEN) $(NAME) has been successfully compiled!$(NC)\n"
+	@printf "$(GREEN)$(NAME) has been successfully compiled!$(NC)\n"
 
 $(NAME): $(OBJ_FILES)
-		@printf "$(YELLOW) Linking objects...$(NC)\n"
+		@printf "$(YELLOW)Linking objects...$(NC)\n"
 		@$(CXX) $(CXXFLAGS) -o $(NAME) $(OBJ_FILES)
-		@printf "$(GREEN) Executable binary $(NAME) created!$(NC)\n"
+		@printf "$(GREEN)Executable binary $(NAME) created!$(NC)\n"
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(HDR_FILES)
 				@mkdir -p $(OBJ_DIR)
@@ -35,17 +35,17 @@ $(OBJ_DIR)/%.o: %.cpp $(HDR_FILES)
 				@$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-		@printf "$(YELLOW) Cleaning object files...$(NC)\n"
+		@printf "$(YELLOW)Cleaning object files...$(NC)\n"
 		@rm -rf $(OBJ_DIR)
 		@rm -f $(COUNTER_FILE)
-		@printf "$(GREEN) Object files cleaned done!$(NC)\n"
+		@printf "$(GREEN)Object files cleaned done!$(NC)\n"
 
 fclean: clean
-		@printf "$(YELLOW) Cleaning $(NAME) executable...$(NC)\n"
+		@printf "$(YELLOW)Cleaning $(NAME) executable...$(NC)\n"
 		@rm -f $(NAME)
-		@printf "$(GREEN) All cleaned up!$(NC)\n"
+		@printf "$(GREEN)All cleaned up!$(NC)\n"
 
 re: clean all
-	@printf "$(PURPLE)Project rebuilt from scratch! 🔄$(NC)\n"
+	@printf "$(PURPLE)Project rebuilt from scratch!$(NC)\n"
 
 .PHONY: all clean fclean re

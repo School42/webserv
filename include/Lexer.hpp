@@ -1,26 +1,36 @@
 #pragma once
 #include "Token.hpp"
 #include <string>
-#include <iostream>
 
 class Lexer {
-	public:
-		Lexer(const std::string& input);
-
-		Token nextToken();
-		Token peekToken();
+public:
+	// Constructor
+	explicit Lexer(const std::string& input);
 	
-	private:
-		const std::string& _input;
-		size_t _pos;
-		int _line;
-		int _col;
+	// Destructor
+	~Lexer();
+	
+	// Public interface
+	Token nextToken();
+	Token peekToken();
 
-		void skipWhitespace();
-		void skipComments();
-		char currentChar() const;
-		char advance();
-
-		Token makeToken(TokenType type, const std::string& value);
-		Token lexIdentifier();
+private:
+	// Non-copyable
+	Lexer(const Lexer& other);
+	Lexer& operator=(const Lexer& rhs);
+	
+	// Members
+	const std::string& _input;
+	size_t _pos;
+	int _line;
+	int _col;
+	
+	// Helper methods
+	void skipWhitespace();
+	void skipComments();
+	char currentChar() const;
+	char advance();
+	
+	Token makeToken(TokenType type, const std::string& value);
+	Token lexIdentifier();
 };

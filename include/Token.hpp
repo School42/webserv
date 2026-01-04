@@ -11,8 +11,11 @@ enum TokenType {
 };
 
 struct Token {
-	TokenType type; // identify the token
-	std::string value; // store the value
-	int line; // track the line
-	int col; // track the colon
+	TokenType type;
+	std::string value;
+	int line;
+	int col;
+	
+	// Constructor for convenience
+	Token() : type(TOK_EOF), value(""), line(0), col(0) {}
 };
