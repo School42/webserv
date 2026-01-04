@@ -14,6 +14,7 @@
 #include "Router.hpp"
 #include "FileServer.hpp"
 #include "CgiHandler.hpp"
+#include "UploadHandler.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "ConfigError.hpp"
@@ -123,7 +124,8 @@ void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 }
 
 // Process a completed HTTP request
-void processRequest(Client* client, Router& router, FileServer& fileServer, CgiHandler& cgiHandler) {
+void processRequest(Client* client, Router& router, FileServer& fileServer, 
+                    CgiHandler& cgiHandler, UploadHandler& uploadHandler) {
 	HttpRequest& request = client->getRequest();
 	std::string response;
 	bool keepAlive = request.isKeepAlive();
@@ -170,12 +172,50 @@ void processRequest(Client* client, Router& router, FileServer& fileServer, CgiH
 		keepAlive = false;
 		
 	} else {
-		// Try to serve file
-		std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
-		
-		// Check if it's a CGI request
-		if (router.isCgiRequest(*route.location, route.resolvedPath)) {
+		// Check for file upload first
+		if (uploadHandler.isUploadRequest(request) && 
+		    !route.location->getUploadStore().empty()) {
+			std::cout << "  File upload detected" << std::endl;
+			
+			UploadResult uploadResult = uploadHandler.handleUpload(request, route);
+			
+			if (uploadResult.success) {
+				std::cout << "  Upload success: " << uploadResult.files.size() 
+				          << " file(s) uploaded" << std::endl;
+				
+				// Generate success response
+				std::stringstream body;
+				body << "<!DOCTYPE html><html><head><title>Upload Successful</title></head>"
+				     << "<body><h1>Upload Successful</h1>"
+				     << "<p>Uploaded " << uploadResult.files.size() << " file(s):</p><ul>";
+				
+				for (size_t i = 0; i < uploadResult.files.size(); ++i) {
+					body << "<li>" << uploadResult.files[i].filename 
+					     << " (" << uploadResult.files[i].size << " bytes)</li>";
+				}
+				
+				body << "</ul></body></html>";
+				
+				response = buildResponse(201, "Created", "text/html", body.str(), keepAlive);
+			} else {
+				std::cout << "  Upload error: " << uploadResult.statusCode 
+				          << " " << uploadResult.errorMessage << std::endl;
+				
+				std::stringstream body;
+				body << "<!DOCTYPE html><html><head><title>Upload Failed</title></head>"
+				     << "<body><h1>" << uploadResult.statusCode << " " 
+				     << uploadResult.statusText << "</h1>"
+				     << "<p>" << uploadResult.errorMessage << "</p></body></html>";
+				
+				response = buildResponse(uploadResult.statusCode, uploadResult.statusText,
+				                         "text/html", body.str(), false);
+				keepAlive = false;
+			}
+			
+		} else if (router.isCgiRequest(*route.location, route.resolvedPath)) {
+			// CGI request
 			std::cout << "  CGI request detected" << std::endl;
+			std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
 			
 			// Execute CGI
 			CgiResult cgiResult = cgiHandler.execute(request, route,
@@ -210,6 +250,7 @@ void processRequest(Client* client, Router& router, FileServer& fileServer, CgiH
 			}
 		} else {
 			// Serve static file
+			std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
 			FileResult fileResult = fileServer.serveFile(request, route);
 			
 			if (fileResult.statusCode == 301 && !fileResult.redirectPath.empty()) {
@@ -240,7 +281,8 @@ void processRequest(Client* client, Router& router, FileServer& fileServer, CgiH
 
 // Handle client read event
 void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager, 
-                      Router& router, FileServer& fileServer, CgiHandler& cgiHandler) {
+                      Router& router, FileServer& fileServer, CgiHandler& cgiHandler,
+                      UploadHandler& uploadHandler) {
 	ssize_t bytesRead = client->readData();
 	
 	if (bytesRead < 0) {
@@ -288,7 +330,7 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 	}
 	
 	if (result == PARSE_SUCCESS) {
-		processRequest(client, router, fileServer, cgiHandler);
+		processRequest(client, router, fileServer, cgiHandler, uploadHandler);
 		client->setState(STATE_WRITING_RESPONSE);
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
 	}
@@ -325,7 +367,8 @@ void handleClientWrite(Client* client, Epoll& epoll, ClientManager& clientManage
 
 // Handle client event
 void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager, 
-                       Router& router, FileServer& fileServer, CgiHandler& cgiHandler) {
+                       Router& router, FileServer& fileServer, CgiHandler& cgiHandler,
+                       UploadHandler& uploadHandler) {
 	Client* client = clientManager.getClient(event.fd);
 	if (!client) {
 		return;
@@ -341,7 +384,8 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 	switch (client->getState()) {
 		case STATE_READING_REQUEST:
 			if (event.isReadable()) {
-				handleClientRead(client, epoll, clientManager, router, fileServer, cgiHandler);
+				handleClientRead(client, epoll, clientManager, router, fileServer, 
+				                 cgiHandler, uploadHandler);
 			}
 			break;
 			
@@ -394,13 +438,15 @@ int main(int argc, char** argv) {
 		
 		std::cout << "✓ Configuration parsed successfully!" << std::endl;
 		
-		// Create router, file server, and CGI handler
+		// Create router, file server, CGI handler, and upload handler
 		Router router(servers);
 		FileServer fileServer;
 		CgiHandler cgiHandler;
+		UploadHandler uploadHandler;
 		std::cout << "✓ Router initialized" << std::endl;
 		std::cout << "✓ File server initialized" << std::endl;
 		std::cout << "✓ CGI handler initialized" << std::endl;
+		std::cout << "✓ Upload handler initialized" << std::endl;
 		
 		Epoll epoll;
 		ClientManager clientManager(epoll);
@@ -457,7 +503,8 @@ int main(int argc, char** argv) {
 						}
 					}
 				} else if (clientManager.hasClient(fd)) {
-					handleClientEvent(events[i], epoll, clientManager, router, fileServer, cgiHandler);
+					handleClientEvent(events[i], epoll, clientManager, router, fileServer, 
+					                  cgiHandler, uploadHandler);
 				}
 			}
 			
