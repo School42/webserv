@@ -13,6 +13,7 @@
 #include "HttpRequest.hpp"
 #include "Router.hpp"
 #include "FileServer.hpp"
+#include "CgiHandler.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "ConfigError.hpp"
@@ -122,7 +123,7 @@ void handleNewConnection(Socket* listenSocket, ClientManager& clientManager) {
 }
 
 // Process a completed HTTP request
-void processRequest(Client* client, Router& router, FileServer& fileServer) {
+void processRequest(Client* client, Router& router, FileServer& fileServer, CgiHandler& cgiHandler) {
 	HttpRequest& request = client->getRequest();
 	std::string response;
 	bool keepAlive = request.isKeepAlive();
@@ -172,13 +173,41 @@ void processRequest(Client* client, Router& router, FileServer& fileServer) {
 		// Try to serve file
 		std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
 		
-		// Check if it's a CGI request (will be implemented in Phase 6)
+		// Check if it's a CGI request
 		if (router.isCgiRequest(*route.location, route.resolvedPath)) {
-			std::cout << "  CGI request detected (not implemented yet)" << std::endl;
-			FileResult errPage = fileServer.serveErrorPage(*route.server, 501);
-			response = buildResponse(501, "Not Implemented", "text/html", 
-			                         errPage.body, false);
-			keepAlive = false;
+			std::cout << "  CGI request detected" << std::endl;
+			
+			// Execute CGI
+			CgiResult cgiResult = cgiHandler.execute(request, route,
+			                                          client->getAddress(),
+			                                          client->getPort(),
+			                                          listenPort);
+			
+			if (cgiResult.success) {
+				std::cout << "  CGI success: " << cgiResult.statusCode << " "
+				          << cgiResult.statusText << " (" << cgiResult.body.size() 
+				          << " bytes)" << std::endl;
+				
+				// Build extra headers from CGI response
+				std::string extraHeaders;
+				for (std::map<std::string, std::string>::iterator it = cgiResult.headers.begin();
+				     it != cgiResult.headers.end(); ++it) {
+					// Skip Content-Type as it's handled separately
+					if (it->first != "Content-Type") {
+						extraHeaders += it->first + ": " + it->second + "\r\n";
+					}
+				}
+				
+				response = buildResponse(cgiResult.statusCode, cgiResult.statusText,
+				                         cgiResult.contentType, cgiResult.body, 
+				                         keepAlive, extraHeaders);
+			} else {
+				std::cout << "  CGI error: " << cgiResult.statusCode << " "
+				          << cgiResult.errorMessage << std::endl;
+				response = buildResponse(cgiResult.statusCode, cgiResult.statusText,
+				                         cgiResult.contentType, cgiResult.body, false);
+				keepAlive = false;
+			}
 		} else {
 			// Serve static file
 			FileResult fileResult = fileServer.serveFile(request, route);
@@ -211,7 +240,7 @@ void processRequest(Client* client, Router& router, FileServer& fileServer) {
 
 // Handle client read event
 void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager, 
-                      Router& router, FileServer& fileServer) {
+                      Router& router, FileServer& fileServer, CgiHandler& cgiHandler) {
 	ssize_t bytesRead = client->readData();
 	
 	if (bytesRead < 0) {
@@ -259,7 +288,7 @@ void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager
 	}
 	
 	if (result == PARSE_SUCCESS) {
-		processRequest(client, router, fileServer);
+		processRequest(client, router, fileServer, cgiHandler);
 		client->setState(STATE_WRITING_RESPONSE);
 		epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
 	}
@@ -296,7 +325,7 @@ void handleClientWrite(Client* client, Epoll& epoll, ClientManager& clientManage
 
 // Handle client event
 void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager, 
-                       Router& router, FileServer& fileServer) {
+                       Router& router, FileServer& fileServer, CgiHandler& cgiHandler) {
 	Client* client = clientManager.getClient(event.fd);
 	if (!client) {
 		return;
@@ -312,7 +341,7 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 	switch (client->getState()) {
 		case STATE_READING_REQUEST:
 			if (event.isReadable()) {
-				handleClientRead(client, epoll, clientManager, router, fileServer);
+				handleClientRead(client, epoll, clientManager, router, fileServer, cgiHandler);
 			}
 			break;
 			
@@ -365,11 +394,13 @@ int main(int argc, char** argv) {
 		
 		std::cout << "✓ Configuration parsed successfully!" << std::endl;
 		
-		// Create router and file server
+		// Create router, file server, and CGI handler
 		Router router(servers);
 		FileServer fileServer;
+		CgiHandler cgiHandler;
 		std::cout << "✓ Router initialized" << std::endl;
 		std::cout << "✓ File server initialized" << std::endl;
+		std::cout << "✓ CGI handler initialized" << std::endl;
 		
 		Epoll epoll;
 		ClientManager clientManager(epoll);
@@ -426,7 +457,7 @@ int main(int argc, char** argv) {
 						}
 					}
 				} else if (clientManager.hasClient(fd)) {
-					handleClientEvent(events[i], epoll, clientManager, router, fileServer);
+					handleClientEvent(events[i], epoll, clientManager, router, fileServer, cgiHandler);
 				}
 			}
 			
