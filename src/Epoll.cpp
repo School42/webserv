@@ -31,7 +31,7 @@ EpollError::~EpollError() throw() {}
 
 // Constructor
 Epoll::Epoll() : _epollFd(-1) {
-	_epollFd = ::epoll_create1(0);
+	_epollFd = ::epoll_create1(0); // close-on-exec
 	if (_epollFd < 0) {
 		throw EpollError("Failed to create epoll instance", errno);
 	}

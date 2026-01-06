@@ -70,6 +70,7 @@ void Socket::bind(const std::string& address, int port) {
 	if (address.empty() || address == "0.0.0.0") {
 		addr.sin_addr.s_addr = INADDR_ANY;
 	} else {
+		// inet_pton - convert char string src into a network address struct in af (address family)
 		if (::inet_pton(AF_INET, address.c_str(), &addr.sin_addr) <= 0) {
 			throw SocketError("Invalid address: " + address);
 		}
@@ -143,6 +144,7 @@ void Socket::setReuseAddr(bool enable) {
 	}
 	
 	int optval = enable ? 1 : 0;
+	// manipulate socket option , SO_REUSEADDR - to bind to a local address that is already in use
 	if (::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
 		throw SocketError("Failed to set SO_REUSEADDR", errno);
 	}

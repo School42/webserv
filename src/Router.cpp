@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cstdlib>
+#include <iostream>
 
 // Constructor
 Router::Router(const std::vector<ServerConfig>& servers)
@@ -64,7 +65,6 @@ RouteResult Router::route(const HttpRequest& request, int listenPort) {
 	
 	// Step 6: Resolve filesystem path
 	result.resolvedPath = resolvePath(*result.location, normalizedPath);
-	
 	// Step 7: Check if CGI request
 	// (pathInfo will be set by caller if needed)
 	
@@ -212,7 +212,6 @@ bool Router::isMethodAllowed(const LocationConfig& location, const std::string& 
 std::string Router::resolvePath(const LocationConfig& location, const std::string& uri) const {
 	std::string root = location.getRoot();
 	std::string locPath = location.getPath();
-	
 	// Remove trailing slash from root if present
 	if (!root.empty() && root[root.size() - 1] == '/') {
 		root = root.substr(0, root.size() - 1);

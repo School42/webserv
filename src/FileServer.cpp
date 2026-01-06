@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <iostream>
 
 // Constructor
 FileServer::FileServer() {
@@ -204,7 +205,6 @@ FileResult FileServer::serveFile(const HttpRequest& request, const RouteResult& 
 	}
 	
 	std::string filePath = route.resolvedPath;
-	
 	// Check if path exists
 	if (!fileExists(filePath)) {
 		result.statusCode = 404;

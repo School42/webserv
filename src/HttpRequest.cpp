@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <algorithm>
+#include <iostream>
 
 // Constructor
 HttpRequest::HttpRequest()

@@ -377,7 +377,7 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 	
 	std::string scriptPath = route.resolvedPath;
 	std::cout << "  [CGI] Script path: " << scriptPath << std::endl;
-	
+
 	// Check if script exists
 	struct stat st;
 	if (stat(scriptPath.c_str(), &st) != 0) {
@@ -410,7 +410,6 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 		result.body = generateErrorPage(500, result.errorMessage);
 		return result;
 	}
-	
 	// Create pipes
 	int pipeIn[2];   // Parent writes, child reads (stdin)
 	int pipeOut[2];  // Child writes, parent reads (stdout)
@@ -470,9 +469,9 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 		size_t lastSlash = scriptDir.rfind('/');
 		if (lastSlash != std::string::npos) {
 			scriptDir = scriptDir.substr(0, lastSlash);
-			if (!scriptDir.empty()) {
-				chdir(scriptDir.c_str());
-			}
+			// if (!scriptDir.empty()) {
+			// 	chdir(scriptDir.c_str());
+			// }
 		}
 		
 		// Execute
