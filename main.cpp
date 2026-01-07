@@ -31,6 +31,155 @@ static const int MAX_KEEPALIVE_REQUESTS = 100;
 // Map listen socket fd to port
 static std::map<int, int> g_fdToPort;
 
+void signalHandler(int signum);
+bool isListenSocket(int fd, const std::vector<Socket*>& listenSockets);
+Socket* findListenSocket(int fd, const std::vector<Socket*>& listenSockets);
+void handleNewConnection(Socket* listenSocket, ClientManager& clientManager);
+void processRequest(Client* client, Router& router, FileServer& fileServer, 
+                    CgiHandler& cgiHandler, UploadHandler& uploadHandler);
+void handleClientRead(Client* client, Epoll& epoll, ClientManager& clientManager, 
+                      Router& router, FileServer& fileServer, CgiHandler& cgiHandler,
+                      UploadHandler& uploadHandler);
+void handleClientWrite(Client* client, Epoll& epoll, ClientManager& clientManager);
+void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientManager, 
+                       Router& router, FileServer& fileServer, CgiHandler& cgiHandler,
+                       UploadHandler& uploadHandler);
+
+int main(int argc, char** argv) {
+	std::signal(SIGINT, signalHandler);
+	std::signal(SIGTERM, signalHandler);
+	std::signal(SIGPIPE, SIG_IGN);
+	
+	try {
+		if (argc != 2) {
+			std::cerr << "Usage: " << argv[0] << " <config_file>" << std::endl;
+			return 1;
+		}
+		
+		std::string filename = argv[1];
+		if (filename.length() < 6 || filename.substr(filename.length() - 5) != ".conf") {
+			std::cerr << "Error: Configuration file must have .conf extension" << std::endl;
+			return 1;
+		}
+		
+		std::ifstream file(argv[1]);
+		if (!file) {
+			std::cerr << "Error: Cannot open file: " << argv[1] << std::endl;
+			return 1;
+		}
+		
+		std::stringstream buffer;
+		buffer << file.rdbuf();
+		std::string config = buffer.str();
+		file.close();
+		
+		Lexer lexer(config);
+		Parser parser(lexer);
+		std::vector<ServerConfig> servers = parser.parse();
+		
+		std::cout << "✓ Configuration parsed successfully!" << std::endl;
+		
+		// Create router, file server, CGI handler, and upload handler
+		Router router(servers);
+		FileServer fileServer;
+		CgiHandler cgiHandler;
+		UploadHandler uploadHandler;
+		std::cout << "✓ Router initialized" << std::endl;
+		std::cout << "✓ File server initialized" << std::endl;
+		std::cout << "✓ CGI handler initialized" << std::endl;
+		std::cout << "✓ Upload handler initialized" << std::endl;
+		
+		Epoll epoll;
+		ClientManager clientManager(epoll);
+		
+		std::vector<Socket*> listenSockets;
+		
+		for (size_t i = 0; i < servers.size(); ++i) {
+			const std::vector<ListenAddress>& addrs = servers[i].getListenAddresses();
+			
+			for (size_t j = 0; j < addrs.size(); ++j) {
+				bool exists = false;
+				for (size_t k = 0; k < listenSockets.size(); ++k) {
+					std::string sockAddr = listenSockets[k]->getAddress();
+					std::string confAddr = addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface;
+					if (listenSockets[k]->getPort() == addrs[j].port && sockAddr == confAddr) {
+						exists = true;
+						break;
+					}
+				}
+				
+				if (exists) continue;
+				
+				Socket* sock = new Socket();
+				sock->setReuseAddr(true);
+				sock->setNonBlocking(true);
+				sock->bind(addrs[j].interface, addrs[j].port);
+				sock->listen();
+				
+				epoll.add(sock->getFd(), EVENT_READ);
+				listenSockets.push_back(sock);
+				
+				std::cout << "✓ Listening on " 
+				          << (addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface)
+				          << ":" << addrs[j].port << std::endl;
+			}
+		}
+		
+		std::cout << "\n=== Server is running. Press Ctrl+C to stop ===" << std::endl;
+		
+		std::vector<Event> events;
+		time_t lastTimeoutCheck = std::time(NULL);
+		
+		while (g_running) {
+			int numEvents = epoll.wait(events, EPOLL_TIMEOUT);
+			
+			for (int i = 0; i < numEvents; ++i) {
+				int fd = events[i].fd;
+				
+				if (isListenSocket(fd, listenSockets)) {
+					if (events[i].isReadable()) {
+						Socket* listenSock = findListenSocket(fd, listenSockets);
+						if (listenSock) {
+							handleNewConnection(listenSock, clientManager);
+						}
+					}
+				} else if (clientManager.hasClient(fd)) {
+					handleClientEvent(events[i], epoll, clientManager, router, fileServer, 
+					                  cgiHandler, uploadHandler);
+				}
+			}
+			
+			time_t now = std::time(NULL);
+			if (now - lastTimeoutCheck >= 1) {
+				clientManager.checkTimeouts(CLIENT_TIMEOUT);
+				lastTimeoutCheck = now;
+			}
+		}
+		
+		std::cout << "\nShutting down..." << std::endl;
+		
+		for (size_t i = 0; i < listenSockets.size(); ++i) {
+			delete listenSockets[i];
+		}
+		
+		std::cout << "✓ Server stopped gracefully" << std::endl;
+		return 0;
+		
+	} catch (const SocketError& e) {
+		std::cerr << "✗ Socket error: " << e.what() << std::endl;
+		return 1;
+	} catch (const EpollError& e) {
+		std::cerr << "✗ Epoll error: " << e.what() << std::endl;
+		return 1;
+	} catch (const ConfigError& e) {
+		std::cerr << "✗ " << e.formatMessage() << std::endl;
+		return 1;
+	} catch (const std::exception& e) {
+		std::cerr << "✗ Error: " << e.what() << std::endl;
+		return 1;
+	}
+}
+
 void signalHandler(int signum) {
 	(void)signum;
 	std::cout << "\nReceived shutdown signal..." << std::endl;
@@ -348,140 +497,5 @@ void handleClientEvent(const Event& event, Epoll& epoll, ClientManager& clientMa
 			g_fdToPort.erase(event.fd);
 			clientManager.removeClient(event.fd);
 			break;
-	}
-}
-
-int main(int argc, char** argv) {
-	std::signal(SIGINT, signalHandler);
-	std::signal(SIGTERM, signalHandler);
-	std::signal(SIGPIPE, SIG_IGN);
-	
-	try {
-		if (argc != 2) {
-			std::cerr << "Usage: " << argv[0] << " <config_file>" << std::endl;
-			return 1;
-		}
-		
-		std::string filename = argv[1];
-		if (filename.length() < 6 || filename.substr(filename.length() - 5) != ".conf") {
-			std::cerr << "Error: Configuration file must have .conf extension" << std::endl;
-			return 1;
-		}
-		
-		std::ifstream file(argv[1]);
-		if (!file) {
-			std::cerr << "Error: Cannot open file: " << argv[1] << std::endl;
-			return 1;
-		}
-		
-		std::stringstream buffer;
-		buffer << file.rdbuf();
-		std::string config = buffer.str();
-		file.close();
-		
-		Lexer lexer(config);
-		Parser parser(lexer);
-		std::vector<ServerConfig> servers = parser.parse();
-		
-		std::cout << "✓ Configuration parsed successfully!" << std::endl;
-		
-		// Create router, file server, CGI handler, and upload handler
-		Router router(servers);
-		FileServer fileServer;
-		CgiHandler cgiHandler;
-		UploadHandler uploadHandler;
-		std::cout << "✓ Router initialized" << std::endl;
-		std::cout << "✓ File server initialized" << std::endl;
-		std::cout << "✓ CGI handler initialized" << std::endl;
-		std::cout << "✓ Upload handler initialized" << std::endl;
-		
-		Epoll epoll;
-		ClientManager clientManager(epoll);
-		
-		std::vector<Socket*> listenSockets;
-		
-		for (size_t i = 0; i < servers.size(); ++i) {
-			const std::vector<ListenAddress>& addrs = servers[i].getListenAddresses();
-			
-			for (size_t j = 0; j < addrs.size(); ++j) {
-				bool exists = false;
-				for (size_t k = 0; k < listenSockets.size(); ++k) {
-					std::string sockAddr = listenSockets[k]->getAddress();
-					std::string confAddr = addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface;
-					if (listenSockets[k]->getPort() == addrs[j].port && sockAddr == confAddr) {
-						exists = true;
-						break;
-					}
-				}
-				
-				if (exists) continue;
-				
-				Socket* sock = new Socket();
-				sock->setReuseAddr(true);
-				sock->setNonBlocking(true);
-				sock->bind(addrs[j].interface, addrs[j].port);
-				sock->listen();
-				
-				epoll.add(sock->getFd(), EVENT_READ);
-				listenSockets.push_back(sock);
-				
-				std::cout << "✓ Listening on " 
-				          << (addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface)
-				          << ":" << addrs[j].port << std::endl;
-			}
-		}
-		
-		std::cout << "\n=== Server is running. Press Ctrl+C to stop ===" << std::endl;
-		
-		std::vector<Event> events;
-		time_t lastTimeoutCheck = std::time(NULL);
-		
-		while (g_running) {
-			int numEvents = epoll.wait(events, EPOLL_TIMEOUT);
-			
-			for (int i = 0; i < numEvents; ++i) {
-				int fd = events[i].fd;
-				
-				if (isListenSocket(fd, listenSockets)) {
-					if (events[i].isReadable()) {
-						Socket* listenSock = findListenSocket(fd, listenSockets);
-						if (listenSock) {
-							handleNewConnection(listenSock, clientManager);
-						}
-					}
-				} else if (clientManager.hasClient(fd)) {
-					handleClientEvent(events[i], epoll, clientManager, router, fileServer, 
-					                  cgiHandler, uploadHandler);
-				}
-			}
-			
-			time_t now = std::time(NULL);
-			if (now - lastTimeoutCheck >= 1) {
-				clientManager.checkTimeouts(CLIENT_TIMEOUT);
-				lastTimeoutCheck = now;
-			}
-		}
-		
-		std::cout << "\nShutting down..." << std::endl;
-		
-		for (size_t i = 0; i < listenSockets.size(); ++i) {
-			delete listenSockets[i];
-		}
-		
-		std::cout << "✓ Server stopped gracefully" << std::endl;
-		return 0;
-		
-	} catch (const SocketError& e) {
-		std::cerr << "✗ Socket error: " << e.what() << std::endl;
-		return 1;
-	} catch (const EpollError& e) {
-		std::cerr << "✗ Epoll error: " << e.what() << std::endl;
-		return 1;
-	} catch (const ConfigError& e) {
-		std::cerr << "✗ " << e.formatMessage() << std::endl;
-		return 1;
-	} catch (const std::exception& e) {
-		std::cerr << "✗ Error: " << e.what() << std::endl;
-		return 1;
 	}
 }

@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
+#include <iostream>
 
 // Constructor
 Client::Client(int fd, const std::string& address, int port)
@@ -49,7 +50,6 @@ ssize_t Client::writeData() {
 	const char* data = _writeBuffer.c_str() + _writeOffset;
 	
 	ssize_t bytesWritten = ::write(_fd, data, remaining);
-	
 	if (bytesWritten > 0) {
 		_writeOffset += bytesWritten;
 		updateLastActivity();

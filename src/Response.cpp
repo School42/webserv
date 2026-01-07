@@ -1,4 +1,5 @@
 #include "Response.hpp"
+#include <iostream>
 
 // Constructor
 Response::Response()
@@ -303,6 +304,5 @@ Response Response::error(int code, const std::string& message) {
 	resp.setContentType("text/html");
 	resp.setBody(buildErrorPageHtml(code, statusText, message));
 	resp.setKeepAlive(false);
-	
 	return resp;
 }
