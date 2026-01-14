@@ -334,23 +334,13 @@ Shutting down...
 
 WebServ includes a comprehensive test suite for validating all functionality.
 
-#### 1. Setup Test Environment
+#### 1. Start Test Server
 
 ```bash
-# Make setup script executable
-chmod +x setup.sh
-
-# Run setup (creates /tmp/www with test files)
-./setup.sh
+./webserv config/default.conf
 ```
 
-#### 2. Start Test Server
-
-```bash
-./webserv /tmp/www/test.conf
-```
-
-#### 3. Access Test Dashboard
+#### 2. Access Test Dashboard
 
 Open your browser to: `http://localhost:8080/`
 
