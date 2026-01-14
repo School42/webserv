@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cerrno>
 #include <climits>
+#include <set>
 
 // Directive scope categories
 enum DirectiveScope {
@@ -116,4 +117,8 @@ private:
 	void debugPrintServers(const std::vector<ServerConfig>& servers) const;
 	void debugPrintServer(const ServerConfig& server) const;
 	void debugPrintLocation(const LocationConfig& location) const;
+
+	// duplicate check
+	// std::set<std::string> _seen_server_names;
+	std::set<ListenAddress> _seen_listen;
 };

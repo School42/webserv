@@ -351,6 +351,14 @@ void Parser::applyServerDirective(ServerConfig& server, const Token& name, const
 			throw ConfigError("'listen' expects exactly one argument (port or interface:port)", name);
 		
 		ListenAddress addr = parseListenAddress(values[0]);
+		if (!_seen_listen.insert(addr).second) {
+			std::stringstream ss;
+			if (addr.interface.empty())
+				ss << "Duplicate listen address: " << addr.port;
+			else
+				ss << "Duplicate listen address: " << addr.interface << ":" << addr.port;
+			throw ConfigError(ss.str());
+		}
 		server.addListen(addr);
 		return;
 	}
@@ -359,9 +367,14 @@ void Parser::applyServerDirective(ServerConfig& server, const Token& name, const
 	if (dir == "server_name") {
 		if (values.empty())
 			throw ConfigError("'server_name' expects at least one argument", name);
-		
-		for (size_t i = 0; i < values.size(); ++i)
+		for (size_t i = 0; i < values.size(); ++i) {
+			// if (!_seen_server_names.insert(values[i].value).second) {
+			// 	std::stringstream ss;
+			// 	ss << "Duplicate server_name: " << values[i].value;
+			// 	throw ConfigError(ss.str());
+			// }
 			server.addServerName(values[i].value);
+		}
 		return;
 	}
 	
