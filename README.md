@@ -109,7 +109,7 @@ make re     # Recompile from scratch
 ### 3. Verify Installation
 
 ```bash
-./webserv --help  # Should display usage information
+./webserv  # Should display usage information
 ```
 
 ---
