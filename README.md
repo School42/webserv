@@ -893,28 +893,16 @@ Key chapters:
 ## 📸 Screenshots
 
 ### Test Dashboard
-
-*[Screenshot placeholder: Main test dashboard showing all test categories]*
-
-![Test Dashboard](docs/images/dashboard.png)
+<img width="3744" height="1306" alt="Screenshot 2026-01-14 at 14-57-39 Webserv Test Suite" src="https://github.com/user-attachments/assets/6b5fe3c6-511f-4b29-ae4d-69f10b3028ae" />
 
 ### CGI Execution
-
-*[Screenshot placeholder: CGI script output examples]*
-
-![CGI Examples](docs/images/cgi-examples.png)
+<img width="3757" height="2051" alt="Screenshot 2026-01-14 at 14-58-08 Hello from Python CGI" src="https://github.com/user-attachments/assets/fc65477a-f937-4184-ae05-31487836e241" />
 
 ### File Upload Interface
-
-*[Screenshot placeholder: File upload form and success page]*
-
-![File Upload](docs/images/upload.png)
+<img width="3757" height="1331" alt="Screenshot 2026-01-14 at 14-58-49 Upload Successful" src="https://github.com/user-attachments/assets/04ac4930-6da1-4bed-b47c-73e8fa015785" />
 
 ### Server Console Output
-
-*[Screenshot placeholder: Terminal showing server startup and request logs]*
-
-![Console Output](docs/images/console.png)
+<img width="2382" height="1708" alt="Screenshot from 2026-01-14 15-09-12" src="https://github.com/user-attachments/assets/56084fbf-d146-4fbb-aab3-34c94aeb5225" />
 
 ---
 
