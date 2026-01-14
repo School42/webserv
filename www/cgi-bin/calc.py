@@ -163,7 +163,7 @@ print(f"""<!DOCTYPE html>
             <button type="submit">Calculate</button>
         </form>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>""")

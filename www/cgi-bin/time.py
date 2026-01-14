@@ -76,7 +76,7 @@ print(f"""<!DOCTYPE html>
             <p><strong>Timezone:</strong> {time.tzname[0]}</p>
         </div>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>""")

@@ -102,7 +102,7 @@ $raw_post = file_get_contents('php://input');
             Content-Type: <?php echo isset($_SERVER['CONTENT_TYPE']) ? htmlspecialchars($_SERVER['CONTENT_TYPE']) : 'Not specified'; ?>
         </p>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>

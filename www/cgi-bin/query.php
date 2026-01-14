@@ -142,7 +142,7 @@ $query_string = isset($_SERVER['QUERY_STRING']) ? htmlspecialchars($_SERVER['QUE
             <button type="submit">Submit Query</button>
         </form>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>

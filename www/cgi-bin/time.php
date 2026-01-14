@@ -73,7 +73,7 @@ $utc = new DateTime('now', new DateTimeZone('UTC'));
             <p><strong>Week:</strong> <?php echo $now->format('W'); ?> of <?php echo $now->format('Y'); ?></p>
         </div>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>

@@ -162,7 +162,7 @@ header("Content-Type: text/html");
             <?php echo implode(', ', get_loaded_extensions()); ?>
         </div>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>

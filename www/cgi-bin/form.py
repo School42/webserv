@@ -102,7 +102,7 @@ print(f"""<!DOCTYPE html>
             Content-Length: {content_length} bytes
         </p>
         
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>""")

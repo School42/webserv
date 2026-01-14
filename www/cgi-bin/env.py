@@ -109,7 +109,7 @@ print_table("HTTP Headers", http_vars, "http-var")
 print_table("Other Variables", other_vars[:20])  # Limit other vars
 
 print("""
-        <a href="/">← Back to Test Suite</a>
+        <a href="/"><- Back to Test Suite</a>
     </div>
 </body>
 </html>""")
