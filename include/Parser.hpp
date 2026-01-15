@@ -111,7 +111,7 @@ private:
 	// Validation & defaults
 	void validateAndApplyDefaults(ServerConfig& server);
 	void applyServerDefaults(ServerConfig& server);
-	void applyLocationDefaults(LocationConfig& location);
+	void applyLocationDefaults(LocationConfig& location, ServerConfig& server);
 	
 	// Debug printing
 	void debugPrintServers(const std::vector<ServerConfig>& servers) const;

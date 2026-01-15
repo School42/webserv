@@ -609,7 +609,7 @@ void Parser::validateAndApplyDefaults(ServerConfig& server) {
 	// Apply defaults to each location after inheritance
 	std::vector<LocationConfig>& locations = server.getLocations();
 	for (size_t i = 0; i < locations.size(); ++i) {
-		applyLocationDefaults(locations[i]);
+		applyLocationDefaults(locations[i], server);
 		
 		// Validate that location has root (either inherited or set)
 		if (!locations[i].hasRoot())
@@ -632,18 +632,39 @@ void Parser::applyServerDefaults(ServerConfig& server) {
 		server.addIndex("index.html");
 }
 
-void Parser::applyLocationDefaults(LocationConfig& location) {
+void Parser::applyLocationDefaults(LocationConfig& location, ServerConfig& server) {
 	// Default: client_max_body_size = 1M (if not inherited)
-	if (!location.hasClientMaxBodySize())
-		location.setClientMaxBodySize(1048576);
+	if (!location.hasClientMaxBodySize()) {
+		if (server.hasClientMaxBodySize()) {
+			size_t size = server.getClientMaxBodySize();
+			location.setClientMaxBodySize(size);
+		} else {
+			location.setClientMaxBodySize(1048576);
+		}
+	}
 	
 	// Default: autoindex = off (if not inherited)
-	if (!location.hasAutoIndex())
-		location.setAutoIndex(false);
+	if (!location.hasAutoIndex()) {
+		bool turn;
+		if (server.hasAutoIndex())
+			turn = server.getAutoIndex();
+		else
+			turn = false;
+		location.setAutoIndex(turn);
+	}
 	
 	// Default: index = index.html (if not inherited)
-	if (!location.hasIndex())
-		location.addIndex("index.html");
+	if (!location.hasIndex()) {
+		if (server.hasIndex()){
+			const std::vector<std::string> index = server.getIndex();
+			std::vector<std::string>::const_iterator it;
+			for(it = index.begin(); it != index.end(); it++){
+				location.addIndex(*it);
+			}
+		} else {
+			location.addIndex("index.html");
+		}
+	}
 	
 	// Default: allowed_methods = GET POST
 	if (location.getAllowedMethods().empty()) {

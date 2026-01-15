@@ -20,7 +20,11 @@ char Lexer::advance() {
 		_line++;
 		_col = 1;
 	} else {
-		_col++;
+		if (c == '\t'){
+			_col += 4;
+		} else {
+			_col++;
+		}
 	}
 	return c;
 }
