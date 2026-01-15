@@ -1,124 +1,135 @@
 # WebServ
 
-A high-performance HTTP/1.1 web server implementation in C++98, featuring epoll-based I/O multiplexing, CGI support, and nginx-style configuration.
+*This project has been created as part of the 42 curriculum by talin, juhtoo-h*
 
-> **Note**: This is a team project developed as part of the 42 school curriculum.
+---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Testing](#testing)
-- [Architecture & Concepts](#architecture--concepts)
+- [Description](#description)
+- [Instructions](#instructions)
+  - [Requirements](#requirements)
+  - [Compilation](#compilation)
+  - [Configuration](#configuration)
+  - [Usage](#usage)
+  - [Testing](#testing)
 - [Resources](#resources)
+- [Technical Documentation](#technical-documentation)
 - [Screenshots](#screenshots)
 
 ---
 
-## 🌟 Overview
+## Description
 
-WebServ is a fully functional HTTP/1.1 web server built from scratch in C++98. It demonstrates advanced network programming concepts including non-blocking I/O, event-driven architecture, and proper HTTP protocol implementation.
+WebServ is a high-performance HTTP/1.1 web server implementation built from scratch in C++98. The project demonstrates advanced network programming concepts and provides a deep understanding of how web servers work at a fundamental level.
 
-### Key Technologies
+### Project Goals
 
-- **Socket Programming**: Low-level TCP socket implementation for client-server communication
-- **Epoll**: Linux's efficient I/O event notification mechanism for handling thousands of connections
-- **CGI**: Common Gateway Interface support for dynamic content (Python, PHP, Shell scripts)
-- **HTTP/1.1**: Full implementation of HTTP request/response cycle with persistent connections
+The primary objective is to implement a fully functional web server that:
+- Handles HTTP/1.1 protocol communication
+- Manages multiple concurrent connections efficiently
+- Serves static files and executes dynamic CGI scripts
+- Processes file uploads with proper multipart parsing
+- Implements virtual host support and URL routing
+
+### Key Features
+
+**Core HTTP/1.1 Implementation**
+- ✅ Full support for GET, POST, and DELETE methods
+- ✅ Persistent connections (keep-alive) for efficient resource usage
+- ✅ Chunked transfer encoding for request body
+- ✅ Proper HTTP request/response parsing and generation
+
+**Advanced I/O Management**
+- ⚡ Epoll-based event-driven architecture for scalability
+- ⚡ Non-blocking I/O to handle thousands of concurrent connections
+- ⚡ Single-threaded design with efficient multiplexing
+- ⚡ Timeout management for idle connections
+
+**Dynamic Content Generation**
+- CGI support for Python, PHP, and Shell scripts
+- Environment variable passing to CGI processes
+- POST data handling for form submissions
+- Configurable timeout management for CGI execution
+
+**File Management**
+- Multipart form-data parsing for file uploads
+- Directory listing with autoindex support
+- Custom error pages per server configuration
+- File size limits and permission checks
+
+**Configuration & Routing**
+- Nginx-style configuration file parsing
+- Virtual host support (multiple servers on different ports)
+- Location-based routing with prefix matching
+- HTTP redirects (301/302) via return directive
+- Method restrictions per location
+
+### Technical Highlights
+
+The implementation showcases:
+- **Socket Programming**: Low-level TCP socket operations for client-server communication
+- **Epoll Multiplexing**: Linux's efficient I/O event notification for handling concurrent connections
+- **State Machine Design**: Incremental HTTP parsing to handle partial data
+- **Process Management**: Fork/exec pattern for CGI execution with proper cleanup
+- **Configuration Parser**: Custom lexer/parser implementing nginx-style syntax with inheritance
 
 ---
 
-## ✨ Features
+## Instructions
 
-### Core Functionality
+### Requirements
 
-- ✅ **HTTP/1.1 Protocol**: Full support for GET, POST, and DELETE methods
-- ✅ **Persistent Connections**: Keep-alive support for efficient resource usage
-- ✅ **Virtual Hosts**: Multiple server configurations on different ports
-- ✅ **Epoll I/O Multiplexing**: Efficient handling of concurrent connections
+**System Requirements**
+- Operating System: Ubuntu/Linux (tested on Ubuntu 24)
+- Compiler: g++ with C++98 support
+- Build System: GNU Make
 
-### Dynamic Content
-
-- 🐍 **CGI Support**: Execute Python, PHP, and Shell scripts
-  - Environment variable passing
-  - POST data handling
-  - Query string processing
-  - Timeout management
-
-### File Management
-
-- 📤 **File Uploads**: Multipart form-data parsing with size limits
-- 📁 **Directory Listing**: Automatic index generation with autoindex
-- 🎨 **Custom Error Pages**: Server-specific error page configuration
-
-### Routing & Redirection
-
-- 🔀 **Location-based Routing**: Nginx-style location blocks
-- ↪️ **URL Redirects**: HTTP 301/302 redirects via `return` directive
-- 📝 **Method Restrictions**: Per-location allowed methods
-
----
-
-## 🔧 Requirements
-
-### System Requirements
-
-- **Operating System**: Ubuntu/Linux (tested on Ubuntu 24)
-- **Compiler**: g++ with C++98 support
-- **Build System**: GNU Make
-
-### Required Packages
+**Required Packages**
 
 ```bash
-# Install required interpreters for CGI
+# Install required interpreters for CGI functionality
 sudo apt-get update
 sudo apt-get install python3 php-cli
-```
 
-### Optional Tools
-
-```bash
-# For testing
+# Optional: for testing
 sudo apt-get install curl
 ```
 
----
+### Compilation
 
-## 📦 Installation
-
-### 1. Clone the Repository
+**Basic Compilation**
 
 ```bash
-git clone <repository-url>
+# Clone the repository
+git clone https://github.com/School42/webserv
 cd webserv
+
+# Compile the project
+make
+
+# Remove object files
+make clean
+
+# Remove object files and executable
+make fclean
+
+# Recompile from scratch
+make re
 ```
 
-### 2. Compile
+**Verify Installation**
 
 ```bash
-make        # Compile the project
-make clean  # Remove object files
-make fclean # Remove object files and executable
-make re     # Recompile from scratch
+./webserv
+# Should display: Usage: ./webserv <config_file>
 ```
 
-### 3. Verify Installation
-
-```bash
-./webserv  # Should display usage information
-```
-
----
-
-## ⚙️ Configuration
+### Configuration
 
 WebServ uses nginx-style configuration files with `.conf` extension.
 
-### Basic Configuration Structure
+**Basic Configuration Structure**
 
 ```nginx
 server {
@@ -135,36 +146,24 @@ server {
 }
 ```
 
-### Configuration Directives
-
-#### Server Block Directives
+**Configuration Directives Reference**
 
 | Directive | Scope | Description | Example |
 |-----------|-------|-------------|---------|
-| `listen` | Server | Port and optional interface to bind | `listen 8080;`<br>`listen 127.0.0.1:8080;` |
-| `server_name` | Server | Virtual host names | `server_name example.com www.example.com;` |
-| `error_page` | Server | Custom error page mapping | `error_page 404 /errors/404.html;` |
-
-#### Location Block Directives
-
-| Directive | Scope | Description | Example |
-|-----------|-------|-------------|---------|
+| `listen` | Server | Port and optional interface | `listen 8080;`<br>`listen 127.0.0.1:8080;` |
+| `server_name` | Server | Virtual host names | `server_name example.com;` |
+| `error_page` | Server | Custom error page | `error_page 404 /errors/404.html;` |
+| `root` | Both | Document root directory | `root /var/www/html;` |
+| `index` | Both | Default index files | `index index.html index.htm;` |
+| `autoindex` | Both | Directory listing | `autoindex on;` |
+| `client_max_body_size` | Both | Max request body | `client_max_body_size 100M;` |
+| `allowed_methods` | Location | Permitted HTTP methods | `allowed_methods GET POST;` |
 | `return` | Location | HTTP redirect | `return 301 /new-page;` |
-| `cgi_pass` | Location | CGI interpreter path | `cgi_pass /usr/bin/python3;` |
-| `cgi_extension` | Location | CGI file extensions | `cgi_extension .py .php .sh;` |
-| `upload_store` | Location | File upload directory | `upload_store /var/www/uploads;` |
-| `allowed_methods` | Location | Permitted HTTP methods | `allowed_methods GET POST DELETE;` |
+| `cgi_pass` | Location | CGI interpreter | `cgi_pass /usr/bin/python3;` |
+| `cgi_extension` | Location | CGI file extensions | `cgi_extension .py .php;` |
+| `upload_store` | Location | Upload directory | `upload_store /uploads;` |
 
-#### Inheritable Directives (Server & Location)
-
-| Directive | Description | Default | Example |
-|-----------|-------------|---------|---------|
-| `root` | Document root directory | Required | `root /var/www/html;` |
-| `index` | Default index files | `index.html` | `index index.html index.htm;` |
-| `autoindex` | Directory listing | `off` | `autoindex on;` |
-| `client_max_body_size` | Max request body size | 1M | `client_max_body_size 100M;` |
-
-### Complete Example Configuration
+**Complete Configuration Example**
 
 ```nginx
 server {
@@ -173,13 +172,12 @@ server {
     
     root /var/www/html;
     index index.html index.htm;
-    autoindex off;
     client_max_body_size 10M;
     
     error_page 404 /errors/404.html;
     error_page 500 502 503 504 /errors/50x.html;
     
-    # Static files
+    # Static files with directory listing
     location / {
         allowed_methods GET;
         autoindex on;
@@ -200,33 +198,25 @@ server {
         client_max_body_size 100M;
     }
     
-    # Redirect old URLs
+    # Redirects
     location /old-page {
         return 301 /new-page.html;
     }
 }
-
-# Additional virtual host
-server {
-    listen 9090;
-    server_name test.local;
-    root /var/www/test;
-    index index.html;
-}
 ```
 
-### Configuration Inheritance
+**Configuration Inheritance**
 
-Location blocks inherit settings from their server block:
+Location blocks inherit settings from their server:
 
 ```nginx
 server {
-    root /var/www/html;              # Server-level
-    client_max_body_size 10M;        # Server-level
+    root /var/www/html;              # Inherited by all locations
+    client_max_body_size 10M;        # Inherited by all locations
     
     location /api/ {
         # Inherits: root, client_max_body_size
-        allowed_methods GET POST;     # Location-specific
+        allowed_methods GET POST;
     }
     
     location /uploads/ {
@@ -235,23 +225,20 @@ server {
 }
 ```
 
----
+### Usage
 
-## 🚀 Usage
-
-### Starting the Server
+**Starting the Server**
 
 ```bash
 ./webserv <config_file.conf>
 ```
 
-**Example:**
-
+Example:
 ```bash
-./webserv /path/to/server.conf
+./webserv config/default.conf
 ```
 
-### Server Output
+**Expected Output**
 
 ```
 ✓ Configuration parsed successfully!
@@ -260,15 +247,13 @@ server {
 ✓ CGI handler initialized
 ✓ Upload handler initialized
 ✓ Listening on 0.0.0.0:8080
-✓ Listening on 0.0.0.0:9090
 
 === Server is running. Press Ctrl+C to stop ===
 ```
 
-### Making Requests
+**Making Requests**
 
-#### Static Files
-
+Static file serving:
 ```bash
 # GET request
 curl http://localhost:8080/
@@ -277,11 +262,10 @@ curl http://localhost:8080/
 curl -I http://localhost:8080/index.html
 
 # Download file
-curl -O http://localhost:8080/downloads/file.pdf
+curl -O http://localhost:8080/file.pdf
 ```
 
-#### CGI Scripts
-
+CGI execution:
 ```bash
 # Python CGI with query string
 curl "http://localhost:8080/cgi-bin/calc.py?a=10&b=5&op=add"
@@ -294,10 +278,9 @@ curl -X POST -d "name=John&email=john@example.com" \
 curl http://localhost:8080/cgi-bin/sysinfo.sh
 ```
 
-#### File Uploads
-
+File uploads:
 ```bash
-# Single file upload
+# Single file
 curl -X POST -F "file=@document.pdf" \
   http://localhost:8080/upload
 
@@ -306,19 +289,11 @@ curl -X POST \
   -F "file1=@image1.jpg" \
   -F "file2=@image2.jpg" \
   http://localhost:8080/upload
-
-# With additional form fields
-curl -X POST \
-  -F "file=@data.csv" \
-  -F "description=Sales data" \
-  -F "category=reports" \
-  http://localhost:8080/upload
 ```
 
-### Stopping the Server
+**Stopping the Server**
 
 Press `Ctrl+C` for graceful shutdown:
-
 ```
 ^C
 Received shutdown signal...
@@ -326,56 +301,29 @@ Shutting down...
 ✓ Server stopped gracefully
 ```
 
----
+### Testing
 
-## 🧪 Testing
+**Automated Test Suite**
 
-### Test Suite Setup
+The project includes a comprehensive test suite with an interactive web dashboard.
 
-WebServ includes a comprehensive test suite for validating all functionality.
-
-#### 1. Start Test Server
-
+1. Start the test server:
 ```bash
-./webserv config/default.conf
+./webserv config/test.conf
 ```
 
-#### 2. Access Test Dashboard
+2. Open browser to: `http://localhost:8080/`
 
-Open your browser to: `http://localhost:8080/`
+3. The test dashboard provides interactive tests for:
+   - Static file serving (HTML, text, JSON)
+   - Directory listing (autoindex)
+   - CGI scripts (Python, PHP, Shell)
+   - File uploads (single, multiple, with form data)
+   - HTTP redirects
+   - Error pages
+   - Method restrictions
 
-### Test Features
-
-The test suite includes:
-
-#### Static File Serving
-- ✅ HTML files
-- ✅ Text files
-- ✅ JSON files
-- ✅ Directory listing (autoindex)
-- ✅ Custom error pages
-
-#### CGI Testing
-- ✅ Python scripts (hello, environment, calculator, forms)
-- ✅ PHP scripts (info, time, query parsing, forms)
-- ✅ Shell scripts (hello, system info, date/time)
-- ✅ GET with query strings
-- ✅ POST with form data
-- ✅ POST with raw body
-
-#### File Upload Testing
-- ✅ Single file upload
-- ✅ Multiple file upload
-- ✅ Multipart form data with fields
-- ✅ Size limit validation (413 error)
-
-#### HTTP Features
-- ✅ Method restrictions (405 error)
-- ✅ URL redirects (301/302)
-- ✅ Keep-alive connections
-- ✅ Request timeouts
-
-### Manual Testing with cURL
+**Manual Testing with cURL**
 
 ```bash
 # Test static file
@@ -384,7 +332,7 @@ curl http://localhost:8080/test.txt
 # Test directory listing
 curl http://localhost:8080/images/
 
-# Test CGI
+# Test CGI with query string
 curl "http://localhost:8080/cgi-bin/calc.py?a=100&b=25&op=div"
 
 # Test POST to CGI
@@ -398,153 +346,213 @@ curl -X POST -F "file=@testfile.txt" \
 # Test 404 error
 curl http://localhost:8080/nonexistent
 
-# Test redirect
+# Test redirect (follow redirects)
 curl -L http://localhost:8080/old-page
 
-# Verbose output
+# Verbose output (see full request/response)
 curl -v http://localhost:8080/
 ```
 
-### Test Configuration
+**Test Coverage**
 
-The test configuration (`/tmp/www/test.conf`) includes:
-
-- Main server on port 8080
-- Virtual host `test.local` on port 8080
-- Alternative server on port 9090
-- CGI support for `.py`, `.php`, `.sh`
-- File upload with 100MB limit
-- Custom error pages
-- Directory autoindex enabled
+The test suite validates:
+- ✅ Static file serving (all MIME types)
+- ✅ Directory listing (autoindex on/off)
+- ✅ Custom error pages (404, 500, etc.)
+- ✅ URL redirects (301, 302)
+- ✅ Python CGI (GET/POST, query strings, forms)
+- ✅ PHP CGI (GET/POST, phpinfo, time, queries)
+- ✅ Shell CGI (hello, system info, date/time)
+- ✅ Single file upload
+- ✅ Multiple file upload
+- ✅ Multipart form data parsing
+- ✅ Upload size limits (413 error)
+- ✅ Method restrictions (405 error)
+- ✅ Keep-alive connections
+- ✅ Request timeouts
+- ✅ Virtual hosts (server_name matching)
 
 ---
 
-## 🏗️ Architecture & Concepts
+## Resources
 
-### HTTP Protocol
+### Classic References
 
-**HTTP (Hypertext Transfer Protocol)** is the foundation of web communication.
+**Books**
 
-#### Request/Response Cycle
+1. **Unix Network Programming, Volume 1: The Sockets Networking API** by W. Richard Stevens
+   - Chapter 4: Elementary TCP Sockets
+   - Chapter 5: TCP Client/Server Example
+   - Chapter 6: I/O Multiplexing (select, poll, epoll)
+   - Chapter 16: Nonblocking I/O
+   
+   *Essential for understanding socket programming and epoll implementation.*
+
+2. **HTTP: The Definitive Guide** by David Gourley & Brian Totty
+   - Chapter 1: Overview of HTTP
+   - Chapter 3: HTTP Messages
+   - Chapter 4: Connection Management
+   - Chapter 17: Content Negotiation
+   
+   *Comprehensive reference for HTTP protocol implementation.*
+
+**RFCs (Internet Standards)**
+
+- [RFC 2616 - HTTP/1.1](https://www.rfc-editor.org/rfc/rfc2616) - Original HTTP/1.1 specification
+- [RFC 7230-7235](https://www.rfc-editor.org/rfc/rfc7230) - Updated HTTP/1.1 specification
+- [RFC 3875 - CGI 1.1](https://datatracker.ietf.org/doc/html/rfc3875) - CGI specification
+
+**Online Documentation**
+
+- [Epoll Manual](https://man7.org/linux/man-pages/man7/epoll.7.html) - Linux epoll documentation
+- [Nginx Documentation](https://nginx.org/en/docs/) - Configuration syntax reference
+- [CGI: Getting Started](https://www.w3.org/CGI/) - W3C CGI introduction
+
+**Tutorials & Articles**
+
+- [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/) - Socket programming tutorial
+- [The C10K Problem](http://www.kegel.com/c10k.html) - Understanding scalable I/O
+- [HTTP Made Really Easy](https://www.jmarshall.com/easy/http/) - HTTP basics
+
+### AI Usage in This Project
+
+**Development Assistance**
+
+AI tools were used for the following tasks:
+
+1. **Code Review & Optimization**
+   - Reviewed socket and epoll implementation for best practices
+   - Suggested optimizations for HTTP parser state machine
+   - Identified potential memory leaks in CGI process cleanup
+
+2. **Documentation Generation**
+   - Generated comprehensive README structure and content
+   - Created detailed code comments for complex sections
+   - Wrote technical explanations for architecture concepts
+
+3. **Testing Strategy**
+   - Suggested comprehensive test cases for HTTP edge cases
+   - Helped design the test suite dashboard structure
+   - Generated test CGI scripts (Python, PHP, Shell)
+
+4. **Configuration Parser Design**
+   - Discussed nginx-style configuration inheritance patterns
+   - Reviewed lexer/parser implementation approach
+   - Suggested error handling strategies for config validation
+
+5. **Debugging Assistance**
+   - Helped diagnose issues with chunked transfer encoding
+   - Provided insights for CGI timeout handling
+
+**Parts Implemented Without AI**
+
+The following core components were implemented entirely by the team without AI assistance:
+- Socket class and low-level socket operations
+- Epoll wrapper and event loop architecture
+- HTTP request parser state machine
+- Router and request routing logic
+- File server implementation
+- CGI execution and process management
+- Upload handler and multipart parsing
+- Configuration lexer and parser
+
+**Learning Approach**
+
+AI was used as a **teaching assistant** and **rubber duck** rather than a code generator. The team:
+- Wrote all code manually after understanding concepts
+- Used AI to explain complex networking concepts
+- Asked AI to review code for potential issues
+- Requested AI to suggest alternative approaches for comparison
+
+This approach ensured deep understanding while benefiting from AI's knowledge base.
+
+---
+
+## Technical Documentation
+
+### HTTP Protocol Overview
+
+**HTTP (Hypertext Transfer Protocol)** is the foundation of web communication. It follows a request-response model:
 
 ```
 Client                          Server
-  |                               |
   |  1. TCP Connection            |
   |------------------------------>|
-  |                               |
   |  2. HTTP Request              |
   |  GET /index.html HTTP/1.1     |
-  |  Host: localhost              |
   |------------------------------>|
-  |                               |
   |  3. HTTP Response             |
   |  HTTP/1.1 200 OK              |
-  |  Content-Type: text/html      |
   |  <html>...</html>             |
   |<------------------------------|
-  |                               |
-  |  4. Connection Close/Keep-alive
+  |  4. Keep-alive/Close          |
 ```
 
-#### HTTP Request Structure
-
+**Request Structure**
 ```
 GET /path?query=value HTTP/1.1          ← Request Line
 Host: localhost:8080                     ← Headers
 User-Agent: curl/7.68.0
-Accept: */*
                                          ← Blank Line
-[Request Body for POST/PUT]              ← Body (optional)
+[Request Body for POST]                  ← Body (optional)
 ```
 
-#### HTTP Response Structure
-
+**Response Structure**
 ```
 HTTP/1.1 200 OK                          ← Status Line
 Content-Type: text/html                  ← Headers
 Content-Length: 1234
-Connection: keep-alive
 
 <html>...</html>                         ← Body
 ```
 
-### Socket Programming
+### Socket Programming Fundamentals
 
-**Sockets** provide an endpoint for network communication.
-
-#### TCP Socket Flow
+**TCP Socket Flow**
 
 ```
 Server Side                    Client Side
 ----------                     -----------
 socket()                       socket()
-  |                              |
-bind()                           |
-  |                              |
+  ↓                              ↓
+bind()                         connect()
+  ↓                              ↓
 listen()                         |
-  |                              |
-accept() -------- connect() -----+
-  |                              |
-recv/send <------- send/recv ----+
-  |                              |
+  ↓                              |
+accept() <-------------------->  |
+  ↓                              ↓
+recv/send <------------------> send/recv
+  ↓                              ↓
 close()                        close()
 ```
 
-#### Key Socket Operations
+**Non-Blocking I/O**
 
-```cpp
-// 1. Create socket
-int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-
-// 2. Bind to address:port
-bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
-
-// 3. Listen for connections
-listen(sockfd, backlog);
-
-// 4. Accept client connection
-int client_fd = accept(sockfd, ...);
-
-// 5. Read/Write data
-recv(client_fd, buffer, size, 0);
-send(client_fd, data, size, 0);
-
-// 6. Close connection
-close(client_fd);
-```
-
-#### Non-Blocking Sockets
-
-WebServ uses **non-blocking sockets** to avoid blocking the entire server:
+WebServ uses non-blocking sockets to prevent blocking the entire server:
 
 ```cpp
 // Set socket to non-blocking mode
 int flags = fcntl(fd, F_GETFL, 0);
 fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-// Read returns immediately (even if no data)
+// Reads return immediately (even if no data)
 ssize_t n = recv(fd, buffer, size, 0);
 if (n < 0 && errno == EAGAIN) {
     // No data available, try again later
 }
 ```
 
-### Epoll: Event-Driven I/O
+### Epoll: Scalable I/O Multiplexing
 
-**Epoll** is Linux's scalable I/O event notification mechanism.
+**Why Epoll?**
 
-#### Why Epoll?
+| Method | Max Connections | Performance | Complexity |
+|--------|----------------|-------------|------------|
+| select() | 1024 | O(n) | High |
+| poll() | Unlimited | O(n) | Medium |
+| **epoll()** | **Unlimited** | **O(1)** | **Low** |
 
-Traditional approaches don't scale:
-
-| Method | Max FDs | Performance | Complexity |
-|--------|---------|-------------|------------|
-| `select()` | 1024 | O(n) | High |
-| `poll()` | Unlimited | O(n) | Medium |
-| **`epoll()`** | **Unlimited** | **O(1)** | **Low** |
-
-#### Epoll Architecture
+**Epoll Architecture**
 
 ```
                     Epoll Instance
@@ -558,378 +566,174 @@ Traditional approaches don't scale:
    (Readable)        (Readable)       (Writable)
 ```
 
-#### Epoll Operations
-
-```cpp
-// 1. Create epoll instance
-int epfd = epoll_create1(0);
-
-// 2. Add socket to monitor
-struct epoll_event ev;
-ev.events = EPOLLIN | EPOLLOUT;  // Monitor read/write
-ev.data.fd = socket_fd;
-epoll_ctl(epfd, EPOLL_CTL_ADD, socket_fd, &ev);
-
-// 3. Wait for events (non-blocking)
-struct epoll_event events[MAX_EVENTS];
-int nfds = epoll_wait(epfd, events, MAX_EVENTS, timeout);
-
-// 4. Process events
-for (int i = 0; i < nfds; i++) {
-    if (events[i].events & EPOLLIN) {
-        // Socket ready to read
-    }
-    if (events[i].events & EPOLLOUT) {
-        // Socket ready to write
-    }
-}
-```
-
-#### Event-Driven Flow in WebServ
+**Event-Driven Flow**
 
 ```
 1. epoll_wait() returns events
        |
        ├─ Listen socket ready? → accept() new client
        |
-       ├─ Client socket readable? → read HTTP request
-       |                           → parse request
-       |                           → process (file/CGI/upload)
-       |                           → switch to write mode
+       ├─ Client readable? → read request
+       |                   → parse request
+       |                   → process (file/CGI)
+       |                   → switch to write mode
        |
-       └─ Client socket writable? → write HTTP response
-                                   → keep-alive or close
+       └─ Client writable? → write response
+                           → keep-alive or close
 ```
 
-### CGI (Common Gateway Interface)
+### CGI Implementation
 
-**CGI** enables web servers to execute external programs and return dynamic content.
-
-#### CGI Architecture
+**CGI Architecture**
 
 ```
-Browser                 WebServ                CGI Script
-   |                       |                        |
-   | HTTP Request          |                        |
-   |---------------------->|                        |
-   |                       |                        |
-   |                       | fork() + execve()      |
-   |                       |----------------------->|
-   |                       |                        |
-   |                       | Environment Variables  |
-   |                       | + Request Body         |
-   |                       |----------------------->|
-   |                       |                        |
-   |                       |        Output          |
-   |                       |<-----------------------|
-   |                       |                        |
-   |     HTTP Response     |                        |
-   |<----------------------|                        |
+Browser          WebServ          CGI Script
+   |                |                  |
+   | HTTP Request   |                  |
+   |--------------->|                  |
+   |                | fork()+execve()  |
+   |                |----------------->|
+   |                | Environment +    |
+   |                | POST body        |
+   |                |----------------->|
+   |                |      Output      |
+   |                |<-----------------|
+   |  HTTP Response |                  |
+   |<---------------|                  |
 ```
 
-#### CGI Environment Variables
-
-WebServ passes HTTP request information via environment variables:
+**CGI Environment Variables**
 
 ```bash
-# Request Information
 REQUEST_METHOD=POST
 REQUEST_URI=/cgi-bin/form.py
 QUERY_STRING=name=John&age=25
-PATH_INFO=/extra/path
-
-# Server Information
 SERVER_NAME=localhost
 SERVER_PORT=8080
-SERVER_PROTOCOL=HTTP/1.1
-SERVER_SOFTWARE=webserv/1.0
-
-# Client Information
 REMOTE_ADDR=127.0.0.1
-REMOTE_PORT=54321
-
-# Content Information
 CONTENT_TYPE=application/x-www-form-urlencoded
 CONTENT_LENGTH=42
-
-# HTTP Headers (converted to HTTP_*)
 HTTP_USER_AGENT=Mozilla/5.0
-HTTP_ACCEPT=text/html
-HTTP_HOST=localhost:8080
 ```
 
-#### CGI Process Flow
-
-```cpp
-// 1. Create pipes for communication
-pipe(stdin_pipe);   // Parent writes, child reads
-pipe(stdout_pipe);  // Child writes, parent reads
-
-// 2. Fork process
-pid_t pid = fork();
-
-if (pid == 0) {
-    // Child process
-    
-    // Redirect stdin/stdout to pipes
-    dup2(stdin_pipe[0], STDIN_FILENO);
-    dup2(stdout_pipe[1], STDOUT_FILENO);
-    
-    // Execute CGI script
-    execve("/usr/bin/python3", argv, envp);
-}
-else {
-    // Parent process
-    
-    // Send request body to CGI
-    write(stdin_pipe[1], request_body, size);
-    close(stdin_pipe[1]);
-    
-    // Read CGI output
-    read(stdout_pipe[0], response_buffer, size);
-    
-    // Wait for CGI to finish
-    waitpid(pid, &status, 0);
-}
-```
-
-#### CGI Output Format
-
-CGI scripts must output headers followed by body:
+**CGI Output Format**
 
 ```
 Content-Type: text/html
 Status: 200 OK
-X-Custom-Header: value
-                              ← Blank line separates headers from body
+                              ← Blank line
 <!DOCTYPE html>
-<html>
-<body>Dynamic content</body>
-</html>
+<html>...</html>
 ```
 
-#### CGI in WebServ
+### State Machine Design
 
-```cpp
-// Detect CGI request
-if (path.endsWith(".py") || path.endsWith(".php")) {
-    
-    // Build environment
-    vector<string> env = buildCgiEnvironment(request);
-    
-    // Execute CGI
-    CgiResult result = cgiHandler.execute(
-        scriptPath,
-        request.getBody(),
-        env,
-        timeout
-    );
-    
-    // Parse CGI output
-    parseHeaders(result.output);
-    
-    // Send response
-    sendResponse(result.statusCode, result.body);
-}
-```
-
-### Request Parsing
-
-WebServ implements a **state machine** for incremental HTTP parsing:
+**HTTP Parser States**
 
 ```
-States:
-1. PARSE_REQUEST_LINE → GET /path HTTP/1.1
-2. PARSE_HEADERS      → Header: Value\r\n
-3. PARSE_BODY         → [body content]
-4. PARSE_COMPLETE     → Ready to process
+PARSE_REQUEST_LINE → GET /path HTTP/1.1
+         ↓
+PARSE_HEADERS      → Header: Value\r\n
+         ↓
+PARSE_BODY         → [request body]
+         ↓
+PARSE_COMPLETE     → Ready to process
 
 Transitions:
-- Incomplete data → Return PARSE_INCOMPLETE (wait for more)
-- Valid data      → Advance to next state
-- Invalid data    → Return PARSE_FAILED (400 Bad Request)
+- Incomplete data → PARSE_INCOMPLETE (wait)
+- Valid data      → Next state
+- Invalid data    → PARSE_FAILED (400 error)
 ```
 
-#### Chunked Transfer Encoding
-
-For requests with `Transfer-Encoding: chunked`:
+**Chunked Transfer Encoding**
 
 ```
 5\r\n              ← Chunk size (hex)
 Hello\r\n          ← Chunk data
 6\r\n
 World!\r\n
-0\r\n              ← Last chunk (size 0)
-\r\n               ← Trailer
+0\r\n              ← Last chunk
+\r\n
 ```
 
-### Response Building
+### Project Architecture
 
-```cpp
-Response response;
-
-// Set status
-response.setStatusCode(200);
-response.setStatusText("OK");
-
-// Set headers
-response.setContentType("text/html");
-response.setHeader("Content-Length", "1234");
-response.setHeader("Connection", "keep-alive");
-
-// Set body
-response.setBody("<html>...</html>");
-
-// Build HTTP response
-string http_response = response.build();
-// → "HTTP/1.1 200 OK\r\n"
-//    "Content-Type: text/html\r\n"
-//    "Content-Length: 1234\r\n"
-//    "\r\n"
-//    "<html>...</html>"
-```
-
-### File Upload Handling
-
-#### Multipart Form Data
-
-File uploads use `multipart/form-data` encoding:
+**Class Diagram (Simplified)**
 
 ```
-POST /upload HTTP/1.1
-Content-Type: multipart/form-data; boundary=----Boundary1234
-
-------Boundary1234
-Content-Disposition: form-data; name="description"
-
-File description here
-------Boundary1234
-Content-Disposition: form-data; name="file"; filename="document.pdf"
-Content-Type: application/pdf
-
-[Binary file data]
-------Boundary1234--
+                    main()
+                      |
+        +-------------+-------------+
+        |             |             |
+    Socket         Epoll      ClientManager
+        |             |             |
+        |             +----Event----+
+        |                           |
+        +----------Client-----------+
+                      |
+        +-------------+-------------+
+        |             |             |
+    HttpRequest    Router      Response
+                      |
+        +-------------+-------------+
+        |             |             |
+    FileServer   CgiHandler   UploadHandler
 ```
 
-#### Parsing Flow
+**Request Processing Flow**
 
-```cpp
-// 1. Extract boundary from Content-Type
-string boundary = extractBoundary(contentType);
-
-// 2. Split body by boundary
-vector<Part> parts = parseMultipart(body, boundary);
-
-// 3. Process each part
-for (Part part : parts) {
-    if (part.isFile) {
-        // Save file to disk
-        saveFile(part.filename, part.data);
-    } else {
-        // Regular form field
-        formData[part.name] = part.value;
-    }
-}
 ```
-
-### Virtual Hosts
-
-Multiple servers can share the same port but serve different content:
-
-```cpp
-// Request arrives on port 8080
-// Host header: "example.com"
-
-// 1. Find servers listening on port 8080
-vector<Server*> candidates = findByPort(8080);
-
-// 2. Match Host header
-Server* server = matchByServerName(candidates, "example.com");
-
-// 3. Route request using matched server's configuration
+1. Epoll detects readable socket
+         ↓
+2. Read data into buffer
+         ↓
+3. Parse HTTP request
+         ↓
+4. Route to handler (File/CGI/Upload)
+         ↓
+5. Generate HTTP response
+         ↓
+6. Write response to client
+         ↓
+7. Keep-alive or close connection
 ```
 
 ---
 
-## 📚 Resources
-
-### CGI Documentation
-
-- [CGI: Getting Started](https://www.w3.org/CGI/)
-- [CGI 1.1 Specification](https://datatracker.ietf.org/doc/html/rfc3875)
-
-### Socket & Network Programming
-
-**Unix Network Programming, Volume 1: The Sockets Networking API** by W. Richard Stevens
-
-Essential chapters:
-- Chapter 4: Elementary TCP Sockets
-- Chapter 5: TCP Client/Server Example
-- Chapter 6: I/O Multiplexing (`select`, `poll`, `epoll`)
-- Chapter 16: Nonblocking I/O
-- Chapter 8: Elementary UDP Sockets (optional)
-
-### HTTP Protocol
-
-**HTTP: The Definitive Guide** by David Gourley & Brian Totty
-
-Key chapters:
-- Chapter 1: Overview of HTTP
-- Chapter 3: HTTP Messages
-- Chapter 4: Connection Management
-- Chapter 9: Web Robots (proper server behavior)
-- Chapter 17: Content Negotiation and Transcoding
-- Chapter 20: Redirection and Load Balancing
-
-### Additional Resources
-
-- [RFC 2616 - HTTP/1.1](https://www.rfc-editor.org/rfc/rfc2616)
-- [RFC 7230-7235 - HTTP/1.1 (Updated)](https://www.rfc-editor.org/rfc/rfc7230)
-- [Epoll Tutorial](https://man7.org/linux/man-pages/man7/epoll.7.html)
-- [Nginx Documentation](https://nginx.org/en/docs/) (configuration reference)
-
----
-
-## 📸 Screenshots
+## Screenshots
 
 ### Test Dashboard
-<img width="3744" height="1306" alt="Screenshot 2026-01-14 at 14-57-39 Webserv Test Suite" src="https://github.com/user-attachments/assets/6b5fe3c6-511f-4b29-ae4d-69f10b3028ae" />
+![Interactive test dashboard](https://github.com/user-attachments/assets/6b5fe3c6-511f-4b29-ae4d-69f10b3028ae)
+
+*The test suite provides an interactive web interface for testing all server features.*
 
 ### CGI Execution
-<img width="3757" height="2051" alt="Screenshot 2026-01-14 at 14-58-08 Hello from Python CGI" src="https://github.com/user-attachments/assets/fc65477a-f937-4184-ae05-31487836e241" />
+![Python CGI execution example](https://github.com/user-attachments/assets/fc65477a-f937-4184-ae05-31487836e241)
+
+*Example of Python CGI script execution showing dynamic content generation.*
 
 ### File Upload Interface
-<img width="3757" height="1331" alt="Screenshot 2026-01-14 at 14-58-49 Upload Successful" src="https://github.com/user-attachments/assets/04ac4930-6da1-4bed-b47c-73e8fa015785" />
+![File upload success page](https://github.com/user-attachments/assets/04ac4930-6da1-4bed-b47c-73e8fa015785)
+
+*Successful file upload with confirmation of uploaded files.*
 
 ### Server Console Output
-<img width="2382" height="1708" alt="Screenshot from 2026-01-14 15-09-12" src="https://github.com/user-attachments/assets/56084fbf-d146-4fbb-aab3-34c94aeb5225" />
+![Server console showing request processing](https://github.com/user-attachments/assets/56084fbf-d146-4fbb-aab3-34c94aeb5225)
+
+*Server console displaying real-time request processing and connection management.*
 
 ---
 
 ## 🤝 Contributing
 
-This project is part of the 42 school curriculum. While it's primarily an educational project, suggestions and feedback are welcome.
+This project is part of the 42 school curriculum. While primarily educational, suggestions and feedback are welcome through issues or pull requests.
 
 ---
 
 ## 📄 License
 
-This project is part of 42 school curriculum and follows their academic policies.
+This project follows 42 school's academic policies and is intended for educational purposes.
 
 ---
 
-## 👥 Authors
-
-Developed as a team project at 42 School.
-
----
-
-## 🙏 Acknowledgments
-
-- 42 School for the project specifications
-- The authors of the referenced technical books
-- The open-source community for HTTP and networking standards
-
----
-
-**Happy coding! 🚀**
+**Developed with ❤️ at 42 School**
