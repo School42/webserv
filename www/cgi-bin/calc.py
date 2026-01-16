@@ -21,7 +21,6 @@ error = None
 try:
     a_num = float(a)
     b_num = float(b)
-    
     if op == 'add':
         result = a_num + b_num
         symbol = '+'
@@ -57,6 +56,7 @@ print(f"""<!DOCTYPE html>
 <html>
 <head>
     <title>CGI Calculator</title>
+	<meta charset="UTF-8">
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

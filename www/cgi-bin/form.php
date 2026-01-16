@@ -9,6 +9,7 @@ $raw_post = file_get_contents('php://input');
 <!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>Form Submission - PHP</title>
     <style>
         body {

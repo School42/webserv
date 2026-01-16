@@ -8,6 +8,7 @@ cat << 'EOF'
 <!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>System Information - Shell CGI</title>
     <style>
         body {

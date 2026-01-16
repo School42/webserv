@@ -9,6 +9,7 @@ print("")
 print("""<!DOCTYPE html>
 <html>
 <head>
+      <meta charset="UTF-8">
     <title>CGI Environment Variables</title>
     <style>
         body {

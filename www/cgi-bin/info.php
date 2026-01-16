@@ -5,6 +5,7 @@ header("Content-Type: text/html");
 <!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>PHP Information</title>
     <style>
         body {

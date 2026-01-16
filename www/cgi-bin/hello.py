@@ -11,6 +11,7 @@ sys.stdout.write("\r\n")
 sys.stdout.write("""<!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>Hello from Python CGI</title>
     <style>
         body {

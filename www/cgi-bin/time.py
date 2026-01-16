@@ -13,6 +13,7 @@ utc_now = datetime.datetime.utcnow()
 print(f"""<!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>Current Time - Python CGI</title>
     <style>
         body {{

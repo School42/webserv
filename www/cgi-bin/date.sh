@@ -16,6 +16,7 @@ cat << EOF
 <!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>Date & Time - Shell CGI</title>
     <style>
         body {

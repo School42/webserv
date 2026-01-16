@@ -19,6 +19,7 @@ def escape_html(text):
 print(f"""<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>POST Data Received</title>
     <style>
         body {{

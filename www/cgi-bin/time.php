@@ -8,6 +8,7 @@ $utc = new DateTime('now', new DateTimeZone('UTC'));
 <!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8">
     <title>Current Time - PHP CGI</title>
     <style>
         body {

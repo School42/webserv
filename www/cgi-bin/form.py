@@ -28,6 +28,7 @@ message = escape_html(message)
 print(f"""<!DOCTYPE html>
 <html>
 <head>
+      <meta charset="UTF-8">
     <title>Form Submission Result</title>
     <style>
         body {{
