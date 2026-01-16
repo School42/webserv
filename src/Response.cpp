@@ -271,24 +271,28 @@ Response Response::redirect(int code, const std::string& location) {
 	Response resp;
 	resp.setStatusCode(code);
 	resp.setStatusText(getStatusTextForCode(code));
-	resp.setHeader("Location", location);
 	resp.setKeepAlive(false);
 	
 	// Build redirect body
 	std::stringstream body;
-	body << "<!DOCTYPE html>\n"
-	     << "<html>\n"
-	     << "<head>\n"
-	     << "  <title>" << code << " " << resp.getStatusText() << "</title>\n"
-	     << "  <meta http-equiv=\"refresh\" content=\"0;url=" << location << "\">\n"
-	     << "</head>\n"
-	     << "<body>\n"
-	     << "  <h1>" << code << " " << resp.getStatusText() << "</h1>\n"
-	     << "  <p>Redirecting to <a href=\"" << location << "\">" << location << "</a></p>\n"
-	     << "</body>\n"
-	     << "</html>\n";
-	
-	resp.setContentType("text/html");
+	if (code >= 300 && code < 400) {
+		body << "<!DOCTYPE html>\n"
+		     << "<html>\n"
+		     << "<head>\n"
+		     << "  <title>" << code << " " << resp.getStatusText() << "</title>\n"
+		     << "  <meta http-equiv=\"refresh\" content=\"0;url=" << location << "\">\n"
+		     << "</head>\n"
+		     << "<body>\n"
+		     << "  <h1>" << code << " " << resp.getStatusText() << "</h1>\n"
+		     << "  <p>Redirecting to <a href=\"" << location << "\">" << location << "</a></p>\n"
+		     << "</body>\n"
+		     << "</html>\n";
+		resp.setContentType("text/html");
+		resp.setHeader("Location", location);
+	} else {
+		body << location;
+		resp.setContentType("text/plain");
+	}
 	resp.setBody(body.str());
 	
 	return resp;

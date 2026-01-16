@@ -63,12 +63,12 @@ void Socket::bind(const std::string& address, int port) {
 	
 	struct sockaddr_in addr;
 	std::memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(static_cast<uint16_t>(port));
+	addr.sin_family = AF_INET; // IPv4
+	addr.sin_port = htons(static_cast<uint16_t>(port)); // Convert the port number to network byte order using htons()
 	
 	// Handle address
 	if (address.empty() || address == "0.0.0.0") {
-		addr.sin_addr.s_addr = INADDR_ANY;
+		addr.sin_addr.s_addr = INADDR_ANY; // Bind to all local interfaces
 	} else {
 		// inet_pton - convert char string src into a network address struct in af (address family)
 		if (::inet_pton(AF_INET, address.c_str(), &addr.sin_addr) <= 0) {
@@ -145,6 +145,8 @@ void Socket::setReuseAddr(bool enable) {
 	
 	int optval = enable ? 1 : 0;
 	// manipulate socket option , SO_REUSEADDR - to bind to a local address that is already in use
+	// allows a socket to bind to a port that is already in use
+	// to avoid "address already in use" errors when restarting quickly, as the old sockets may still be in the TIME_WAIT state
 	if (::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
 		throw SocketError("Failed to set SO_REUSEADDR", errno);
 	}

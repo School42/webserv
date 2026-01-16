@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <cstring>
 #include <algorithm>
+#include <iostream>
 
 // Constructor
 UploadHandler::UploadHandler() {}

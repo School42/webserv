@@ -51,7 +51,9 @@ void Server::setupListenSockets() {
 			
 			// Create new listen socket
 			Socket* sock = new Socket();
-			sock->setReuseAddr(true);
+			sock->setReuseAddr(true); 
+			// for the old fd, need to use this to avoid "address already in use" errors 
+			//when restarting quickly, as the old sockets may still be in the TIME_WAIT state
 			sock->setNonBlocking(true);
 			sock->bind(addrs[j].interface, addrs[j].port);
 			sock->listen();
@@ -103,9 +105,10 @@ void Server::eventLoop() {
 	std::vector<Event> events;
 	
 	while (_running) {
+		// collect events for a specific amount of time "EPOLL_TIMEOUT"
 		int numEvents = _epoll.wait(events, EPOLL_TIMEOUT);
 		
-		// Process events
+		// Process every events
 		for (int i = 0; i < numEvents; ++i) {
 			int fd = events[i].fd;
 			
