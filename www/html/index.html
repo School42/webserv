@@ -430,58 +430,6 @@ curl -H "X-Custom: value" http://localhost:8080/cgi-bin/env.py
             </div>
         </div>
 
-        <!-- Quick Reference -->
-        <h2 class="section-title">📖 Quick Reference</h2>
-        <div class="grid">
-            <div class="card">
-                <h2><span class="icon">💻</span> Curl Commands</h2>
-                <div class="code-block">
-# Simple GET request
-curl http://localhost:8080/
-
-# POST with form data
-curl -X POST -d "key=value" http://localhost:8080/cgi-bin/post.py
-
-# POST with JSON
-curl -X POST -H "Content-Type: application/json" \
-     -d '{"name":"test"}' http://localhost:8080/cgi-bin/post.py
-
-# File upload
-curl -X POST -F "file=@/path/to/file.txt" \
-     http://localhost:8080/upload
-
-# Multiple files
-curl -X POST -F "<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="15737c7970242855737c7970243b616d61">[email&#160;protected]</a>" -F "<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f6909f9a93c4cbb6909f9a93c4d8828e82">[email&#160;protected]</a>" \
-     http://localhost:8080/upload
-
-# View response headers
-curl -I http://localhost:8080/
-
-# Verbose output
-curl -v http://localhost:8080/
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2><span class="icon">📋</span> Test Checklist</h2>
-                <div style="padding: 10px;">
-                    <p>✅ Static HTML files</p>
-                    <p>✅ Static text/JSON files</p>
-                    <p>✅ Directory listing (autoindex)</p>
-                    <p>✅ Custom error pages</p>
-                    <p>✅ URL redirects</p>
-                    <p>✅ Python CGI (GET/POST)</p>
-                    <p>✅ PHP CGI (GET/POST)</p>
-                    <p>✅ Shell CGI</p>
-                    <p>✅ Single file upload</p>
-                    <p>✅ Multiple file upload</p>
-                    <p>✅ Multipart form data</p>
-                    <p>✅ Query string parsing</p>
-                    <p>✅ POST body parsing</p>
-                </div>
-            </div>
-        </div>
-
         <footer>
             <p>Webserv Test Suite | Built for 42 Project</p>
             <p style="margin-top: 10px; font-size: 0.85em;">
@@ -490,7 +438,6 @@ curl -v http://localhost:8080/
         </footer>
     </div>
 
-    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 	<script>
 		document.getElementById('singleUploadForm').addEventListener('submit', function(event) {
 		    // Prevent the default form submission
