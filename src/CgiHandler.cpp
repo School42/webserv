@@ -556,15 +556,8 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 			// EOF - CGI finished
 			break;
 		} else {
-			// Error or would block
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				// No data available, wait a bit
-				usleep(10000);  // 10ms
-				continue;
-			} else {
-				// Real error
-				break;
-			}
+			// Read error
+			break;
 		}
 	}
 	

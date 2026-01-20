@@ -534,12 +534,6 @@ WebServ uses non-blocking sockets to prevent blocking the entire server:
 // Set socket to non-blocking mode
 int flags = fcntl(fd, F_GETFL, 0);
 fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-// Reads return immediately (even if no data)
-ssize_t n = recv(fd, buffer, size, 0);
-if (n < 0 && errno == EAGAIN) {
-    // No data available, try again later
-}
 ```
 
 ### Epoll: Scalable I/O Multiplexing

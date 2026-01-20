@@ -2,7 +2,6 @@
 #include "Response.hpp"
 #include <iostream>
 #include <sstream>
-#include <cerrno>
 #include <cstring>
 
 // Constructor
@@ -204,12 +203,9 @@ void Server::handleClientRead(Client* client) {
 	ssize_t bytesRead = client->readData();
 	
 	if (bytesRead < 0) {
-		if (errno != EAGAIN && errno != EWOULDBLOCK) {
-			std::cerr << "Error reading from client " << client->getFd() 
-			          << ": " << std::strerror(errno) << std::endl;
-			_fdToPort.erase(client->getFd());
-			_clientManager.removeClient(client->getFd());
-		}
+		std::cerr << "Error reading from client " << client->getFd() << std::endl;
+		_fdToPort.erase(client->getFd());
+		_clientManager.removeClient(client->getFd());
 		return;
 	}
 	
@@ -256,12 +252,9 @@ void Server::handleClientWrite(Client* client) {
 	ssize_t bytesWritten = client->writeData();
 	
 	if (bytesWritten < 0) {
-		if (errno != EAGAIN && errno != EWOULDBLOCK) {
-			std::cerr << "Error writing to client " << client->getFd() 
-			          << ": " << std::strerror(errno) << std::endl;
-			_fdToPort.erase(client->getFd());
-			_clientManager.removeClient(client->getFd());
-		}
+		std::cerr << "Error writing to client " << client->getFd() << std::endl;
+		_fdToPort.erase(client->getFd());
+		_clientManager.removeClient(client->getFd());
 		return;
 	}
 	
