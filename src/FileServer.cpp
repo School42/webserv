@@ -3,6 +3,7 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <unistd.h>
 #include <ctime>
 #include <algorithm>
 #include <cerrno>
@@ -629,4 +630,142 @@ std::string FileServer::generateErrorPage(int code, const std::string& message) 
 	     << "</html>\n";
 	
 	return html.str();
+}
+
+// Delete file
+FileResult FileServer::deleteFile(const HttpRequest& request, const RouteResult& route) {
+	FileResult result;
+	
+	if (!route.matched || !route.location) {
+		result.statusCode = 500;
+		result.statusText = "Internal Server Error";
+		result.errorMessage = "Invalid route result";
+		result.body = generateErrorPage(500, result.errorMessage);
+		return result;
+	}
+	
+	std::string filePath = route.resolvedPath;
+	
+	// Check if path exists
+	if (!fileExists(filePath)) {
+		result.statusCode = 404;
+		result.statusText = "Not Found";
+		result.errorMessage = "File not found: " + request.getPath();
+		result.body = generateErrorPage(404, result.errorMessage);
+		return result;
+	}
+	
+	// Check if it's a directory
+	if (isDirectory(filePath)) {
+		result.statusCode = 403;
+		result.statusText = "Forbidden";
+		result.errorMessage = "Cannot delete directories";
+		result.body = generateErrorPage(403, result.errorMessage);
+		return result;
+	}
+	
+	// Security check: ensure file is within location root
+	// This prevents deletion of files outside the configured directory
+	std::string root = route.location->getRoot();
+	if (!root.empty()) {
+		// Normalize both paths for comparison
+		// Check if filePath starts with root
+		if (filePath.find(root) != 0) {
+			result.statusCode = 403;
+			result.statusText = "Forbidden";
+			result.errorMessage = "Access denied: file outside allowed directory";
+			result.body = generateErrorPage(403, result.errorMessage);
+			return result;
+		}
+	}
+	
+	// Attempt to delete the file
+	if (unlink(filePath.c_str()) != 0) {
+		// Deletion failed
+		int err = errno;
+		
+		if (err == EACCES || err == EPERM) {
+			result.statusCode = 403;
+			result.statusText = "Forbidden";
+			result.errorMessage = "Permission denied: cannot delete file";
+		} else {
+			result.statusCode = 500;
+			result.statusText = "Internal Server Error";
+			result.errorMessage = std::string("Failed to delete file: ") + std::strerror(err);
+		}
+		
+		result.body = generateErrorPage(result.statusCode, result.errorMessage);
+		return result;
+	}
+	
+	// Success - file deleted
+	result.success = true;
+	result.statusCode = 200;
+	result.statusText = "OK";
+	result.contentType = "text/html";
+	
+	// Generate success response
+	std::stringstream html;
+	html << "<!DOCTYPE html>\n"
+	     << "<html>\n"
+	     << "<head>\n"
+	     << "  <meta charset=\"UTF-8\">\n"
+	     << "  <title>File Deleted</title>\n"
+	     << "  <style>\n"
+	     << "    body {\n"
+	     << "      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n"
+	     << "      display: flex;\n"
+	     << "      justify-content: center;\n"
+	     << "      align-items: center;\n"
+	     << "      min-height: 100vh;\n"
+	     << "      margin: 0;\n"
+	     << "      background-color: #f5f5f5;\n"
+	     << "    }\n"
+	     << "    .container {\n"
+	     << "      text-align: center;\n"
+	     << "      padding: 40px;\n"
+	     << "      background: white;\n"
+	     << "      border-radius: 8px;\n"
+	     << "      box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n"
+	     << "    }\n"
+	     << "    .success-icon {\n"
+	     << "      font-size: 64px;\n"
+	     << "      color: #4caf50;\n"
+	     << "      margin-bottom: 20px;\n"
+	     << "    }\n"
+	     << "    h1 {\n"
+	     << "      color: #333;\n"
+	     << "      margin: 0 0 10px;\n"
+	     << "    }\n"
+	     << "    p {\n"
+	     << "      color: #666;\n"
+	     << "      margin: 0 0 20px;\n"
+	     << "      word-break: break-all;\n"
+	     << "    }\n"
+	     << "    a {\n"
+	     << "      display: inline-block;\n"
+	     << "      padding: 12px 30px;\n"
+	     << "      background: #4caf50;\n"
+	     << "      color: white;\n"
+	     << "      text-decoration: none;\n"
+	     << "      border-radius: 8px;\n"
+	     << "    }\n"
+	     << "    a:hover { opacity: 0.9; }\n"
+	     << "    .footer { margin-top: 40px; color: #aaa; font-size: 12px; }\n"
+	     << "  </style>\n"
+	     << "</head>\n"
+	     << "<body>\n"
+	     << "  <div class=\"container\">\n"
+	     << "    <div class=\"success-icon\">✓</div>\n"
+	     << "    <h1>File Deleted Successfully</h1>\n"
+	     << "    <p>" << htmlEscape(request.getPath()) << "</p>\n"
+	     << "    <a href=\"/\">Go Home</a>\n"
+	     << "    <div class=\"footer\">webserv</div>\n"
+	     << "  </div>\n"
+	     << "</body>\n"
+	     << "</html>\n";
+	
+	result.body = html.str();
+	
+	return result;
 }

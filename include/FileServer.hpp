@@ -63,6 +63,9 @@ public:
 	
 	// Get file modification time (for caching headers)
 	std::string getLastModified(const std::string& path) const;
+	
+	// Delete file
+	FileResult deleteFile(const HttpRequest& request, const RouteResult& route);
 
 private:
 	// Non-copyable

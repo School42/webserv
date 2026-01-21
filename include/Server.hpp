@@ -12,6 +12,20 @@
 #include "CgiHandler.hpp"
 #include "UploadHandler.hpp"
 
+struct CgiSession {
+    Client* client;
+
+    pid_t pid;
+    int stdoutFd;
+    int stdinFd;
+
+    time_t startTime;
+    std::string output;
+
+    RouteResult route;
+};
+
+
 class Server {
 public:
 	// Constructor
@@ -67,6 +81,7 @@ private:
 	FileServer _fileServer;
 	CgiHandler _cgiHandler;
 	UploadHandler _uploadHandler;
+	std::map<int, CgiSession> _cgiSessions;
 	
 	// Members - State
 	bool _running;

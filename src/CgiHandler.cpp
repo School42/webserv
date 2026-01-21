@@ -462,17 +462,8 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 		
 		// Also redirect stderr to stdout so we can capture error messages
 		dup2(pipeOut[1], STDERR_FILENO);
-		close(pipeOut[1]);
 		
-		// Change to script directory
-		std::string scriptDir = scriptPath;
-		size_t lastSlash = scriptDir.rfind('/');
-		if (lastSlash != std::string::npos) {
-			scriptDir = scriptDir.substr(0, lastSlash);
-			// if (!scriptDir.empty()) {
-			// 	chdir(scriptDir.c_str());
-			// }
-		}
+		close(pipeOut[1]);
 		
 		// Execute
 		if (interpreter.empty()) {
@@ -556,8 +547,16 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 			// EOF - CGI finished
 			break;
 		} else {
-			// Read error
-			break;
+			// bytesRead < 0 - check if it's EAGAIN/EWOULDBLOCK or real error
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				// No data available yet, sleep briefly and continue
+				usleep(1000);  // Sleep 1ms
+				continue;
+			} else {
+				// Real read error
+				std::cerr << "  [CGI] Read error: " << std::strerror(errno) << std::endl;
+				break;
+			}
 		}
 	}
 	

@@ -168,6 +168,14 @@
             word-break: break-all;
         }
         
+        .result-success {
+            border-left: 4px solid #00c853;
+        }
+        
+        .result-error {
+            border-left: 4px solid #f44336;
+        }
+        
         .section-title {
             font-size: 1.5em;
             margin: 40px 0 20px;
@@ -352,7 +360,7 @@
                     <input type="file" name="file" required>
                     <button type="submit" class="btn btn-success">Upload File</button>
                 </form>
-				<div id="responseMessage"></div>
+                <div id="responseMessage"></div>
             </div>
             
             <div class="card">
@@ -386,12 +394,38 @@
             </div>
         </div>
 
+        <!-- DELETE Method Tests -->
+        <h2 class="section-title">🗑️ File Deletion (DELETE Method)</h2>
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">📋</span> Quick Delete Tests</h2>
+                <p>Predefined paths for testing. Upload files first, then delete them.</p>
+                <div class="test-links">
+                    <button onclick="deleteFile('/uploads/test.txt')" class="btn btn-danger">Delete test.txt</button>
+                    <button onclick="deleteFile('/uploads/image.png')" class="btn btn-danger">Delete image.png</button>
+                    <button onclick="deleteFile('/uploads/document.pdf')" class="btn btn-danger">Delete document.pdf</button>
+                </div>
+                <div id="quickDeleteResult" class="result-box" style="display: none; margin-top: 15px;"></div>
+            </div>
+            
+            <div class="card">
+                <h2><span class="icon">⚠️</span> DELETE Security Tests</h2>
+                <p>Test security features - these should fail with 403 or 404.</p>
+                <div class="test-links">
+                    <button onclick="deleteFile('/uploads/', 'securityTestResult')" class="btn btn-warning">Try Delete Directory</button>
+                    <button onclick="deleteFile('/../etc/passwd', 'securityTestResult')" class="btn btn-warning">Try Path Traversal</button>
+                    <button onclick="deleteFile('/nonexistent.txt', 'securityTestResult')" class="btn btn-warning">Try Non-existent File</button>
+                </div>
+                <div id="securityTestResult" class="result-box" style="display: none; margin-top: 15px;"></div>
+            </div>
+        </div>
+
         <!-- HTTP Methods Tests -->
         <h2 class="section-title">🔧 HTTP Methods</h2>
         <div class="grid">
             <div class="card">
                 <h2><span class="icon">🧪</span> Method Tester</h2>
-                <p>Test different HTTP methods. Use browser console or curl for DELETE.</p>
+                <p>Test different HTTP methods using curl commands.</p>
                 <div class="code-block">
 # Test GET
 curl -X GET http://localhost:8080/
@@ -399,8 +433,8 @@ curl -X GET http://localhost:8080/
 # Test POST
 curl -X POST -d "data=test" http://localhost:8080/cgi-bin/post.py
 
-# Test DELETE (if enabled)
-curl -X DELETE http://localhost:8080/api/resource
+# Test DELETE
+curl -X DELETE http://localhost:8080/uploads/test.txt
 
 # Test with headers
 curl -H "X-Custom: value" http://localhost:8080/cgi-bin/env.py
@@ -438,27 +472,62 @@ curl -H "X-Custom: value" http://localhost:8080/cgi-bin/env.py
         </footer>
     </div>
 
-	<script>
-		document.getElementById('singleUploadForm').addEventListener('submit', function(event) {
-		    // Prevent the default form submission
-		    event.preventDefault();
+    <script>
+        // Handle single file upload with fetch
+        document.getElementById('singleUploadForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch(this.action, {
+                method: this.method,
+                body: formData
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                }
+                throw new Error('Upload failed with status: ' + response.status);
+            })
+            .then(data => {
+                document.getElementById('responseMessage').innerHTML = 
+                    '<div class="result-box result-success" style="display: block;">✓ Upload successful!</div>';
+            })
+            .catch(error => {
+                document.getElementById('responseMessage').innerHTML = 
+                    '<div class="result-box result-error" style="display: block;">✗ Error: ' + error.message + '</div>';
+            });
+        });
 
-		    // Collect form data
-		    const formData = new FormData(this);
+        // DELETE file function
+        function deleteFile(path, resultElementId = 'quickDeleteResult') {
+            const resultElement = document.getElementById(resultElementId);
+            resultElement.style.display = 'block';
+            resultElement.className = 'result-box';
+            resultElement.textContent = 'Sending DELETE request to: ' + path + '...';
+            
+            fetch(path, {
+                method: 'DELETE'
+            })
+            .then(response => {
+                const status = response.status;
+                return response.text().then(text => ({status, text}));
+            })
+            .then(({status, text}) => {
+                if (status >= 200 && status < 300) {
+                    resultElement.className = 'result-box result-success';
+                    resultElement.innerHTML = '✓ Success (HTTP ' + status + ')\n\nFile deleted successfully!\nPath: ' + path;
+                } else {
+                    resultElement.className = 'result-box result-error';
+                    resultElement.innerHTML = '✗ Failed (HTTP ' + status + ')\n\nPath: ' + path + '\n\nThis is expected for security tests.';
+                }
+            })
+            .catch(error => {
+                resultElement.className = 'result-box result-error';
+                resultElement.textContent = '✗ Error: ' + error.message;
+            });
+        }
 
-		    // Send the data using the fetch API
-		    fetch(this.action, {
-		      method: this.method,
-		      body: formData
-		    })
-		    .then(response => response.json()) // Assuming the server responds with JSON
-		    .then(data => {
-		      // Handle the success response
-		      document.getElementById('responseMessage').innerText = "Success: " + data.message;
-		    })
-		    .catch(error => {
-		      // Handle errors
-		      document.getElementById('responseMessage').innerText = "Error: " + error.message;
-		    });
-		  });
-	</script>
+    </script>
+</body>
+</html>

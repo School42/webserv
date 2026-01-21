@@ -12,10 +12,10 @@ Server::Server(const std::vector<ServerConfig>& servers)
 	  _running(false),
 	  _lastTimeoutCheck(std::time(NULL)) {
 	
-	std::cout << "✓ Router initialized" << std::endl;
-	std::cout << "✓ File server initialized" << std::endl;
-	std::cout << "✓ CGI handler initialized" << std::endl;
-	std::cout << "✓ Upload handler initialized" << std::endl;
+	std::cout << "âœ“ Router initialized" << std::endl;
+	std::cout << "âœ“ File server initialized" << std::endl;
+	std::cout << "âœ“ CGI handler initialized" << std::endl;
+	std::cout << "âœ“ Upload handler initialized" << std::endl;
 }
 
 // Destructor
@@ -60,7 +60,7 @@ void Server::setupListenSockets() {
 			_epoll.add(sock->getFd(), EVENT_READ);
 			_listenSockets.push_back(sock);
 			
-			std::cout << "✓ Listening on " 
+			std::cout << "âœ“ Listening on " 
 			          << (addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface)
 			          << ":" << addrs[j].port << std::endl;
 		}
@@ -127,7 +127,7 @@ void Server::eventLoop() {
 		checkTimeouts();
 	}
 	
-	std::cout << "✓ Server stopped gracefully" << std::endl;
+	std::cout << "âœ“ Server stopped gracefully" << std::endl;
 }
 
 // Check and handle client timeouts
@@ -385,6 +385,31 @@ void Server::processRequest(Client* client) {
 				response.setStatusText(cgiResult.statusText);
 				response.setContentType(cgiResult.contentType);
 				response.setBody(cgiResult.body);
+				keepAlive = false;
+			}
+		} else if (request.getMethod() == "DELETE") {
+			// Handle DELETE request
+			std::cout << "  DELETE request detected" << std::endl;
+			std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
+			
+			FileResult deleteResult = _fileServer.deleteFile(request, route);
+			
+			if (deleteResult.success) {
+				std::cout << "  File deleted successfully" << std::endl;
+				response.setStatusCode(deleteResult.statusCode);
+				response.setStatusText(deleteResult.statusText);
+				response.setContentType(deleteResult.contentType);
+				response.setBody(deleteResult.body);
+			} else {
+				std::cout << "  Delete error: " << deleteResult.statusCode 
+				          << " " << deleteResult.errorMessage << std::endl;
+				
+				// Try custom error page
+				FileResult errPage = _fileServer.serveErrorPage(*route.server, deleteResult.statusCode);
+				response.setStatusCode(deleteResult.statusCode);
+				response.setStatusText(deleteResult.statusText);
+				response.setContentType(errPage.contentType);
+				response.setBody(errPage.body);
 				keepAlive = false;
 			}
 		} else {
