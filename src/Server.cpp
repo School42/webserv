@@ -3,6 +3,9 @@
 #include <iostream>
 #include <sstream>
 #include <cstring>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 // Constructor
 Server::Server(const std::vector<ServerConfig>& servers)
@@ -12,10 +15,10 @@ Server::Server(const std::vector<ServerConfig>& servers)
 	  _running(false),
 	  _lastTimeoutCheck(std::time(NULL)) {
 	
-	std::cout << "âœ“ Router initialized" << std::endl;
-	std::cout << "âœ“ File server initialized" << std::endl;
-	std::cout << "âœ“ CGI handler initialized" << std::endl;
-	std::cout << "âœ“ Upload handler initialized" << std::endl;
+	std::cout << "✓ Router initialized" << std::endl;
+	std::cout << "✓ File server initialized" << std::endl;
+	std::cout << "✓ CGI handler initialized" << std::endl;
+	std::cout << "✓ Upload handler initialized" << std::endl;
 }
 
 // Destructor
@@ -60,7 +63,7 @@ void Server::setupListenSockets() {
 			_epoll.add(sock->getFd(), EVENT_READ);
 			_listenSockets.push_back(sock);
 			
-			std::cout << "âœ“ Listening on " 
+			std::cout << "✓ Listening on " 
 			          << (addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface)
 			          << ":" << addrs[j].port << std::endl;
 		}
@@ -118,6 +121,8 @@ void Server::eventLoop() {
 						handleNewConnection(listenSock);
 					}
 				}
+			} else if (isCgiPipe(fd)) {
+				handleCgiEvent(events[i]);
 			} else if (_clientManager.hasClient(fd)) {
 				handleClientEvent(events[i]);
 			}
@@ -125,9 +130,10 @@ void Server::eventLoop() {
 		
 		// Check for timeouts
 		checkTimeouts();
+		checkCgiTimeouts();
 	}
 	
-	std::cout << "âœ“ Server stopped gracefully" << std::endl;
+	std::cout << "✓ Server stopped gracefully" << std::endl;
 }
 
 // Check and handle client timeouts
@@ -351,42 +357,12 @@ void Server::processRequest(Client* client) {
 			}
 			
 		} else if (_router.isCgiRequest(*route.location, route.resolvedPath)) {
-			// CGI request
+			// CGI request - start non-blocking
 			std::cout << "  CGI request detected" << std::endl;
 			std::cout << "  Resolved path: " << route.resolvedPath << std::endl;
 			
-			// Execute CGI
-			CgiResult cgiResult = _cgiHandler.execute(request, route,
-			                                          client->getAddress(),
-			                                          client->getPort(),
-			                                          listenPort);
-			
-			if (cgiResult.success) {
-				std::cout << "  CGI success: " << cgiResult.statusCode << " "
-				          << cgiResult.statusText << " (" << cgiResult.body.size() 
-				          << " bytes)" << std::endl;
-				
-				response.setStatusCode(cgiResult.statusCode);
-				response.setStatusText(cgiResult.statusText);
-				response.setContentType(cgiResult.contentType);
-				response.setBody(cgiResult.body);
-				
-				// Add CGI headers
-				for (std::map<std::string, std::string>::iterator it = cgiResult.headers.begin();
-				     it != cgiResult.headers.end(); ++it) {
-					if (it->first != "Content-Type") {
-						response.setHeader(it->first, it->second);
-					}
-				}
-			} else {
-				std::cout << "  CGI error: " << cgiResult.statusCode << " "
-				          << cgiResult.errorMessage << std::endl;
-				response.setStatusCode(cgiResult.statusCode);
-				response.setStatusText(cgiResult.statusText);
-				response.setContentType(cgiResult.contentType);
-				response.setBody(cgiResult.body);
-				keepAlive = false;
-			}
+			startCgiSession(client, route);
+			return;  // Don't send response yet - will be sent when CGI completes
 		} else if (request.getMethod() == "DELETE") {
 			// Handle DELETE request
 			std::cout << "  DELETE request detected" << std::endl;
@@ -467,4 +443,294 @@ Socket* Server::findListenSocket(int fd) const {
 		}
 	}
 	return NULL;
+}
+// Check if fd is a CGI pipe
+bool Server::isCgiPipe(int fd) const {
+	return _cgiSessions.find(fd) != _cgiSessions.end();
+}
+
+// Handle CGI event (read/write on CGI pipes)
+void Server::handleCgiEvent(const Event& event) {
+	int fd = event.fd;
+	std::map<int, CgiSession>::iterator it = _cgiSessions.find(fd);
+	
+	if (it == _cgiSessions.end()) {
+		return;  // Session already cleaned up
+	}
+	
+	CgiSession& session = it->second;
+	
+	// Handle errors
+	if (event.isError() || event.isHangup() || event.isPeerClosed()) {
+		std::cout << "  [CGI] Error or hangup on fd " << fd << std::endl;
+		
+		// If this is stdout, the CGI finished
+		if (fd == session.stdoutFd) {
+			finalizeCgiSession(fd);
+		} else {
+			// stdin error - cleanup
+			cleanupCgiSession(fd, true);
+		}
+		return;
+	}
+	
+	// Handle stdout (reading from CGI)
+	if (fd == session.stdoutFd && event.isReadable()) {
+		char buffer[4096];
+		ssize_t bytesRead = read(fd, buffer, sizeof(buffer));
+		
+		if (bytesRead > 0) {
+			session.outputBuffer.append(buffer, bytesRead);
+			
+			// Check size limit
+			if (session.outputBuffer.size() > 10 * 1024 * 1024) {  // 10MB
+				std::cout << "  [CGI] Output too large" << std::endl;
+				cleanupCgiSession(fd, true);
+			}
+		} else if (bytesRead == 0) {
+			// EOF - CGI finished
+			std::cout << "  [CGI] EOF on stdout" << std::endl;
+			finalizeCgiSession(fd);
+		} else {
+			// bytesRead < 0: error or would-block
+			// On non-blocking socket, -1 with EAGAIN/EWOULDBLOCK is normal
+			// We'll get another event when data is available
+			// Real errors (pipe broken, etc.) will trigger error/hangup events
+		}
+	}
+	
+	// Handle stdin (writing to CGI)
+	if (fd == session.stdinFd && event.isWritable() && !session.inputComplete) {
+		size_t remaining = session.inputBuffer.size() - session.inputSent;
+		if (remaining > 0) {
+			ssize_t bytesWritten = write(fd, 
+			                              session.inputBuffer.c_str() + session.inputSent,
+			                              remaining);
+			
+			if (bytesWritten > 0) {
+				session.inputSent += bytesWritten;
+				
+				// Check if all input sent
+				if (session.inputSent >= session.inputBuffer.size()) {
+					session.inputComplete = true;
+					// Close stdin to signal EOF to CGI
+					close(session.stdinFd);
+					_epoll.remove(session.stdinFd);
+					session.stdinFd = -1;
+					std::cout << "  [CGI] All input sent, closed stdin" << std::endl;
+				}
+			}
+			// If bytesWritten <= 0, just wait for next writable event
+			// Real errors will trigger error/hangup events
+		}
+	}
+}
+
+// Finalize CGI session (parse output and send response)
+void Server::finalizeCgiSession(int cgiFd) {
+	std::map<int, CgiSession>::iterator it = _cgiSessions.find(cgiFd);
+	if (it == _cgiSessions.end()) {
+		return;
+	}
+	
+	CgiSession& session = it->second;
+	Client* client = session.client;
+	
+	if (!client) {
+		cleanupCgiSession(cgiFd, false);
+		return;
+	}
+	
+	std::cout << "  [CGI] Finalizing session (output: " 
+	          << session.outputBuffer.size() << " bytes)" << std::endl;
+	
+	// Wait for child process
+	int status;
+	waitpid(session.pid, &status, 0);
+	
+	if (WIFEXITED(status)) {
+		std::cout << "  [CGI] Process exited with status: " << WEXITSTATUS(status) << std::endl;
+	} else if (WIFSIGNALED(status)) {
+		std::cout << "  [CGI] Process killed by signal: " << WTERMSIG(status) << std::endl;
+	}
+	
+	// Parse CGI output
+	std::map<std::string, std::string> headers;
+	std::string body;
+	int statusCode = 200;
+	std::string statusText = "OK";
+	
+	if (!_cgiHandler.parseCgiOutput(session.outputBuffer, headers, body, 
+	                                 statusCode, statusText)) {
+		std::cout << "  [CGI] Failed to parse output" << std::endl;
+		Response response = Response::error(502, "Bad Gateway: Failed to parse CGI output");
+		response.setHeader("Server", "webserv/1.0");
+		client->appendToWriteBuffer(response.build());
+		client->setState(STATE_WRITING_RESPONSE);
+		client->setKeepAlive(false);
+		_epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
+		cleanupCgiSession(cgiFd, false);
+		return;
+	}
+	
+	// Build response
+	Response response;
+	response.setStatusCode(statusCode);
+	response.setStatusText(statusText);
+	response.setBody(body);
+	
+	// Set content type
+	std::map<std::string, std::string>::iterator ctIt = headers.find("Content-Type");
+	if (ctIt != headers.end()) {
+		response.setContentType(ctIt->second);
+	} else {
+		response.setContentType("text/html");
+	}
+	
+	// Add other headers
+	for (std::map<std::string, std::string>::iterator it = headers.begin();
+	     it != headers.end(); ++it) {
+		if (it->first != "Content-Type") {
+			response.setHeader(it->first, it->second);
+		}
+	}
+	
+	response.setKeepAlive(client->isKeepAlive());
+	response.setHeader("Server", "webserv/1.0");
+	
+	std::cout << "  [CGI] Sending response: " << statusCode << " " << statusText 
+	          << " (" << body.size() << " bytes)" << std::endl;
+	
+	// Send response to client
+	client->appendToWriteBuffer(response.build());
+	client->setState(STATE_WRITING_RESPONSE);
+	_epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
+	
+	// Cleanup CGI session
+	cleanupCgiSession(cgiFd, false);
+}
+
+// Cleanup CGI session
+void Server::cleanupCgiSession(int cgiFd, bool sendError) {
+	std::map<int, CgiSession>::iterator it = _cgiSessions.find(cgiFd);
+	if (it == _cgiSessions.end()) {
+		return;
+	}
+	
+	CgiSession& session = it->second;
+	Client* client = session.client;
+	
+	std::cout << "  [CGI] Cleaning up session (fd: " << cgiFd << ")" << std::endl;
+	
+	// Send error response if requested
+	if (sendError && client) {
+		Response response = Response::error(502, "Bad Gateway: CGI execution failed");
+		response.setHeader("Server", "webserv/1.0");
+		client->appendToWriteBuffer(response.build());
+		client->setState(STATE_WRITING_RESPONSE);
+		client->setKeepAlive(false);
+		_epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
+	}
+	
+	// Remove pipes from epoll and close them
+	if (session.stdoutFd >= 0) {
+		_epoll.remove(session.stdoutFd);
+		close(session.stdoutFd);
+	}
+	if (session.stdinFd >= 0) {
+		_epoll.remove(session.stdinFd);
+		close(session.stdinFd);
+	}
+	
+	// Kill process if still running
+	if (session.pid > 0) {
+		kill(session.pid, SIGKILL);
+		waitpid(session.pid, NULL, 0);
+	}
+	
+	// Remove session
+	_cgiSessions.erase(it);
+}
+
+// Check CGI timeouts
+void Server::checkCgiTimeouts() {
+	time_t now = std::time(NULL);
+	std::vector<int> timedOut;
+	
+	for (std::map<int, CgiSession>::iterator it = _cgiSessions.begin();
+	     it != _cgiSessions.end(); ++it) {
+		if (now - it->second.startTime > 30) {  // 30 second timeout
+			std::cout << "  [CGI] Session timed out (fd: " << it->first << ")" << std::endl;
+			timedOut.push_back(it->first);
+		}
+	}
+	
+	for (size_t i = 0; i < timedOut.size(); ++i) {
+		cleanupCgiSession(timedOut[i], true);
+	}
+}
+
+// Start CGI session (non-blocking)
+void Server::startCgiSession(Client* client, const RouteResult& route) {
+	int listenPort = _fdToPort[client->getFd()];
+	HttpRequest& request = client->getRequest();
+	
+	// Start CGI process
+	CgiStartResult result = _cgiHandler.startNonBlocking(
+		request, route,
+		client->getAddress(),
+		client->getPort(),
+		listenPort
+	);
+	
+	if (!result.success) {
+		// Failed to start CGI
+		std::cout << "  [CGI] Failed to start: " << result.errorMessage << std::endl;
+		
+		Response response = Response::error(result.errorCode, result.errorMessage);
+		response.setHeader("Server", "webserv/1.0");
+		client->appendToWriteBuffer(response.build());
+		client->setState(STATE_WRITING_RESPONSE);
+		client->setKeepAlive(false);
+		_epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
+		return;
+	}
+	
+	// Create CGI session
+	CgiSession session;
+	session.client = client;
+	session.pid = result.pid;
+	session.stdoutFd = result.stdoutFd;
+	session.stdinFd = result.stdinFd;
+	session.startTime = std::time(NULL);
+	session.inputBuffer = request.getBody();
+	session.inputSent = 0;
+	session.inputComplete = request.getBody().empty();
+	session.route = route;
+	session.requestMethod = request.getMethod();
+	session.requestUri = request.getUri();
+	session.clientIp = client->getAddress();
+	session.clientPort = client->getPort();
+	session.serverPort = listenPort;
+	
+	// Add stdout to epoll for reading
+	_epoll.add(session.stdoutFd, EVENT_READ);
+	_cgiSessions[session.stdoutFd] = session;
+	
+	// If we have input to send, add stdin to epoll for writing
+	if (!session.inputComplete) {
+		_epoll.add(session.stdinFd, EVENT_WRITE);
+		// Also track by stdin fd
+		_cgiSessions[session.stdinFd] = session;
+	} else {
+		// No input - close stdin immediately
+		close(session.stdinFd);
+		session.stdinFd = -1;
+	}
+	
+	// Set client to processing state
+	client->setState(STATE_PROCESSING);
+	
+	std::cout << "  [CGI] Session started (stdout: " << session.stdoutFd 
+	          << ", stdin: " << session.stdinFd << ")" << std::endl;
 }

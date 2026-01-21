@@ -14,17 +14,36 @@
 
 struct CgiSession {
     Client* client;
-
+    
     pid_t pid;
-    int stdoutFd;
-    int stdinFd;
-
+    int stdoutFd;   // Read from CGI
+    int stdinFd;    // Write to CGI
+    
     time_t startTime;
-    std::string output;
-
+    std::string inputBuffer;   // Request body to send to CGI
+    size_t inputSent;          // How much input has been sent
+    std::string outputBuffer;  // Accumulated CGI output
+    bool inputComplete;        // All input sent to CGI
+    
     RouteResult route;
+    // Store request info as strings instead of copying HttpRequest
+    std::string requestMethod;
+    std::string requestUri;
+    std::string clientIp;
+    int clientPort;
+    int serverPort;
+    
+    CgiSession()
+        : client(NULL),
+          pid(-1),
+          stdoutFd(-1),
+          stdinFd(-1),
+          startTime(0),
+          inputSent(0),
+          inputComplete(false),
+          clientPort(0),
+          serverPort(0) {}
 };
-
 
 class Server {
 public:
@@ -59,12 +78,20 @@ private:
 	void handleClientEvent(const Event& event);
 	void handleClientRead(Client* client);
 	void handleClientWrite(Client* client);
+	void handleCgiEvent(const Event& event);
 	
 	// Request processing
 	void processRequest(Client* client);
 	
+	// CGI session management
+	void startCgiSession(Client* client, const RouteResult& route);
+	void finalizeCgiSession(int cgiFd);
+	void cleanupCgiSession(int cgiFd, bool sendError);
+	void checkCgiTimeouts();
+	
 	// Helpers
 	bool isListenSocket(int fd) const;
+	bool isCgiPipe(int fd) const;
 	Socket* findListenSocket(int fd) const;
 	
 	// Members - Configuration

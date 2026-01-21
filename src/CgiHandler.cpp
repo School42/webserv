@@ -360,7 +360,157 @@ std::string CgiHandler::generateErrorPage(int code, const std::string& message) 
 	return html.str();
 }
 
-// Main execute method
+// Start CGI script (non-blocking)
+CgiStartResult CgiHandler::startNonBlocking(const HttpRequest& request,
+                                            const RouteResult& route,
+                                            const std::string& clientIp,
+                                            int clientPort,
+                                            int serverPort) {
+	CgiStartResult result;
+	
+	// Validate route
+	if (!route.matched || !route.location) {
+		result.errorMessage = "Invalid route for CGI execution";
+		result.errorCode = 500;
+		return result;
+	}
+	
+	std::string scriptPath = route.resolvedPath;
+	std::cout << "  [CGI] Starting non-blocking CGI" << std::endl;
+	std::cout << "  [CGI] Script path: " << scriptPath << std::endl;
+	
+	// Check if script exists
+	struct stat st;
+	if (stat(scriptPath.c_str(), &st) != 0) {
+		result.errorMessage = "CGI script not found: " + scriptPath;
+		result.errorCode = 404;
+		std::cout << "  [CGI] ERROR: " << result.errorMessage << std::endl;
+		return result;
+	}
+	
+	// Get interpreter
+	std::string interpreter = getInterpreter(scriptPath, *route.location);
+	std::cout << "  [CGI] Interpreter: " << (interpreter.empty() ? "(direct)" : interpreter) << std::endl;
+	
+	// If no interpreter, script must be executable
+	if (interpreter.empty() && !isExecutable(scriptPath)) {
+		result.errorMessage = "CGI script is not executable";
+		result.errorCode = 403;
+		return result;
+	}
+	
+	// If interpreter specified, check it exists
+	if (!interpreter.empty() && !isExecutable(interpreter)) {
+		result.errorMessage = "CGI interpreter not found: " + interpreter;
+		result.errorCode = 500;
+		return result;
+	}
+	
+	// Create pipes
+	int pipeIn[2];   // Parent writes, child reads (stdin)
+	int pipeOut[2];  // Child writes, parent reads (stdout)
+	
+	if (pipe(pipeIn) < 0) {
+		result.errorMessage = "Failed to create input pipe";
+		result.errorCode = 500;
+		return result;
+	}
+	
+	if (pipe(pipeOut) < 0) {
+		close(pipeIn[0]);
+		close(pipeIn[1]);
+		result.errorMessage = "Failed to create output pipe";
+		result.errorCode = 500;
+		return result;
+	}
+	
+	// Build environment
+	std::vector<std::string> envVec = buildEnvironment(request, route, scriptPath,
+	                                                    clientIp, clientPort, serverPort);
+	char** envp = vectorToEnvp(envVec);
+	
+	// Fork
+	pid_t pid = fork();
+	
+	if (pid < 0) {
+		// Fork failed
+		close(pipeIn[0]);
+		close(pipeIn[1]);
+		close(pipeOut[0]);
+		close(pipeOut[1]);
+		freeEnvp(envp);
+		result.errorMessage = "Failed to fork CGI process";
+		result.errorCode = 500;
+		return result;
+	}
+	
+	if (pid == 0) {
+		// Child process
+		
+		// Redirect stdin to pipeIn
+		close(pipeIn[1]);  // Close write end
+		dup2(pipeIn[0], STDIN_FILENO);
+		close(pipeIn[0]);
+		
+		// Redirect stdout to pipeOut
+		close(pipeOut[0]);  // Close read end
+		dup2(pipeOut[1], STDOUT_FILENO);
+		
+		// Also redirect stderr to stdout so we can capture error messages
+		dup2(pipeOut[1], STDERR_FILENO);
+		
+		close(pipeOut[1]);
+		
+		// Execute
+		if (interpreter.empty()) {
+			// Direct execution
+			char* argv[] = {
+				const_cast<char*>(scriptPath.c_str()),
+				NULL
+			};
+			execve(scriptPath.c_str(), argv, envp);
+		} else {
+			// Use interpreter
+			char* argv[] = {
+				const_cast<char*>(interpreter.c_str()),
+				const_cast<char*>(scriptPath.c_str()),
+				NULL
+			};
+			execve(interpreter.c_str(), argv, envp);
+		}
+		
+		// If we get here, exec failed
+		std::cerr << "CGI exec failed: " << std::strerror(errno) << std::endl;
+		_exit(1);
+	}
+	
+	// Parent process
+	freeEnvp(envp);
+	
+	// Close unused ends
+	close(pipeIn[0]);   // Close read end of input pipe
+	close(pipeOut[1]);  // Close write end of output pipe
+	
+	// Set pipes to non-blocking
+	setNonBlocking(pipeIn[1]);
+	setNonBlocking(pipeOut[0]);
+	
+	// Return the FDs and PID
+	result.success = true;
+	result.pid = pid;
+	result.stdinFd = pipeIn[1];
+	result.stdoutFd = pipeOut[0];
+	
+	std::cout << "  [CGI] Started process " << pid 
+	          << " (stdin: " << result.stdinFd 
+	          << ", stdout: " << result.stdoutFd << ")" << std::endl;
+	
+	return result;
+}
+
+// OLD BLOCKING EXECUTE METHOD - NO LONGER USED
+// Kept for reference. Use startNonBlocking() instead.
+/*
 CgiResult CgiHandler::execute(const HttpRequest& request,
                                const RouteResult& route,
                                const std::string& clientIp,
@@ -612,3 +762,4 @@ CgiResult CgiHandler::execute(const HttpRequest& request,
 	
 	return result;
 }
+*/

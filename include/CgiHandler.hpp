@@ -50,6 +50,24 @@ struct CgiProcess {
 	}
 };
 
+// CGI start result (for non-blocking execution)
+struct CgiStartResult {
+	bool success;
+	pid_t pid;
+	int stdinFd;   // Write to this to send data to CGI
+	int stdoutFd;  // Read from this to get CGI output
+	std::string errorMessage;
+	int errorCode;
+	
+	CgiStartResult()
+		: success(false),
+		  pid(-1),
+		  stdinFd(-1),
+		  stdoutFd(-1),
+		  errorMessage(""),
+		  errorCode(500) {}
+};
+
 class CgiHandler {
 public:
 	// Constructor
@@ -58,12 +76,19 @@ public:
 	// Destructor
 	~CgiHandler();
 	
-	// Execute CGI script (blocking version for simplicity)
-	CgiResult execute(const HttpRequest& request,
-	                  const RouteResult& route,
-	                  const std::string& clientIp,
-	                  int clientPort,
-	                  int serverPort);
+	// Start CGI script (non-blocking - returns immediately after fork)
+	CgiStartResult startNonBlocking(const HttpRequest& request,
+	                                const RouteResult& route,
+	                                const std::string& clientIp,
+	                                int clientPort,
+	                                int serverPort);
+	
+	// Parse CGI output (headers + body) - made public for Server to use
+	bool parseCgiOutput(const std::string& output,
+	                    std::map<std::string, std::string>& headers,
+	                    std::string& body,
+	                    int& statusCode,
+	                    std::string& statusText) const;
 	
 	// Check if a file is executable
 	bool isExecutable(const std::string& path) const;
@@ -77,6 +102,9 @@ public:
 	
 	// Get timeout
 	int getTimeout() const;
+	
+	// Generate error page - made public for Server to use
+	std::string generateErrorPage(int code, const std::string& message) const;
 
 private:
 	// Non-copyable
@@ -91,13 +119,6 @@ private:
 	                                          int clientPort,
 	                                          int serverPort) const;
 	
-	// Parse CGI output (headers + body)
-	bool parseCgiOutput(const std::string& output,
-	                    std::map<std::string, std::string>& headers,
-	                    std::string& body,
-	                    int& statusCode,
-	                    std::string& statusText) const;
-	
 	// Convert vector of strings to char** for execve
 	char** vectorToEnvp(const std::vector<std::string>& env) const;
 	
@@ -109,9 +130,6 @@ private:
 	
 	// Close pipe safely
 	void closePipe(int* pipe) const;
-	
-	// Generate error page
-	std::string generateErrorPage(int code, const std::string& message) const;
 	
 	// Extract PATH_INFO from URI
 	std::string extractPathInfo(const std::string& uri,
