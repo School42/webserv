@@ -876,7 +876,7 @@ server {
     client_max_body_size 10M;
     
     location /cgi-bin/ {
-        cgi_extension .py .pl .php;
+        cgi_extension .py .php;
         cgi_pass /usr/bin/python3;
         allowed_methods GET POST;
     }

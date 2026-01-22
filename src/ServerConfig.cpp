@@ -1,6 +1,7 @@
 #include "ServerConfig.hpp"
 #include "LocationConfig.hpp"
 #include <sstream>
+#include <iostream>
 
 // Constructor
 ServerConfig::ServerConfig()
@@ -111,6 +112,8 @@ void ServerConfig::setAutoIndex(bool value) {
 void ServerConfig::setClientMaxBodySize(size_t size) {
 	if (_client_max_body_size_set)
 		throw std::runtime_error("Duplicate 'client_max_body_size' directive in server block");
+	if (size > (100 * 1024 * 1024))
+		throw std::runtime_error("'client_max_body_size' cannot exceed 100M");
 	_client_max_body_size = size;
 	_client_max_body_size_set = true;
 }

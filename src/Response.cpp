@@ -272,6 +272,7 @@ Response Response::redirect(int code, const std::string& location) {
 	resp.setStatusCode(code);
 	resp.setStatusText(getStatusTextForCode(code));
 	resp.setKeepAlive(false);
+	resp.setHeader("Location", location);
 	
 	// Build redirect body
 	std::stringstream body;
@@ -288,7 +289,6 @@ Response Response::redirect(int code, const std::string& location) {
 		     << "</body>\n"
 		     << "</html>\n";
 		resp.setContentType("text/html");
-		resp.setHeader("Location", location);
 	} else {
 		body << location;
 		resp.setContentType("text/plain");

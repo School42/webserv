@@ -108,12 +108,17 @@ void LocationConfig::addCgiPass(const std::string& path) {
 void LocationConfig::addCgiExtension(const std::string& ext) {
 	if (!_seen_cgi_extension.insert(ext).second)
 		throw std::runtime_error("Duplicate cgi_extension: " + ext);
+	if (!(ext == ".py" || ext == ".sh" || ext == ".php" || ext == ".rb" || ext == ".pl")) {
+		throw std::runtime_error("Not supported cgi_extenstion: " + ext);
+	}
 	_cgi_extension.push_back(ext);
 }
 
 void LocationConfig::setClientMaxBodySize(size_t size) {
 	if (_client_max_body_size_set)
 		throw std::runtime_error("Duplicate 'client_max_body_size' directive in location block");
+	if (size > (100 * 1024 * 1024))
+		throw std::runtime_error("'client_max_body_size' cannot exceed 100M");
 	_client_max_body_size = size;
 	_client_max_body_size_set = true;
 }
