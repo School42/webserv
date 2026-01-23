@@ -26,7 +26,6 @@ struct CgiSession {
     bool inputComplete;        // All input sent to CGI
     
     RouteResult route;
-    // Store request info as strings instead of copying HttpRequest
     std::string requestMethod;
     std::string requestUri;
     std::string clientIp;
@@ -110,6 +109,7 @@ private:
 	UploadHandler _uploadHandler;
 	std::map<int, CgiSession> _cgiSessions;  // Keyed by stdoutFd
 	std::map<int, int> _stdinToStdout;  // Maps stdin fd to stdout fd
+	std::map<int, int> _clientToCgi;  // Maps client fd to CGI stdout fd
 	
 	// Members - State
 	bool _running;

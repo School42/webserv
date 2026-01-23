@@ -15,10 +15,10 @@ Server::Server(const std::vector<ServerConfig>& servers)
 	  _running(false),
 	  _lastTimeoutCheck(std::time(NULL)) {
 	
-	std::cout << "âœ“ Router initialized" << std::endl;
-	std::cout << "âœ“ File server initialized" << std::endl;
-	std::cout << "âœ“ CGI handler initialized" << std::endl;
-	std::cout << "âœ“ Upload handler initialized" << std::endl;
+	std::cout << "✓ Router initialized" << std::endl;
+	std::cout << "✓ File server initialized" << std::endl;
+	std::cout << "✓ CGI handler initialized" << std::endl;
+	std::cout << "✓ Upload handler initialized" << std::endl;
 }
 
 // Destructor
@@ -63,7 +63,7 @@ void Server::setupListenSockets() {
 			_epoll.add(sock->getFd(), EVENT_READ);
 			_listenSockets.push_back(sock);
 			
-			std::cout << "âœ“ Listening on " 
+			std::cout << "✓ Listening on " 
 			          << (addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface)
 			          << ":" << addrs[j].port << std::endl;
 		}
@@ -133,7 +133,7 @@ void Server::eventLoop() {
 		checkCgiTimeouts();
 	}
 	
-	std::cout << "âœ“ Server stopped gracefully" << std::endl;
+	std::cout << "✓ Server stopped gracefully" << std::endl;
 }
 
 // Check and handle client timeouts
@@ -176,6 +176,21 @@ void Server::handleClientEvent(const Event& event) {
 	// Check for errors or disconnection
 	if (event.isError() || event.isHangup() || event.isPeerClosed()) {
 		std::cout << "Client " << client->getAddress() << " disconnected" << std::endl;
+		
+		// Check if this client has an active CGI session
+		std::map<int, int>::iterator cgiIt = _clientToCgi.find(event.fd);
+		if (cgiIt != _clientToCgi.end()) {
+			// Client disconnected while CGI is running
+			int cgiStdoutFd = cgiIt->second;
+			std::map<int, CgiSession>::iterator sessionIt = _cgiSessions.find(cgiStdoutFd);
+			if (sessionIt != _cgiSessions.end()) {
+				// Nullify the client pointer so CGI won't try to send response
+				std::cout << "  [CGI] Client disconnected during CGI execution, nullifying session client" << std::endl;
+				sessionIt->second.client = NULL;
+			}
+			_clientToCgi.erase(cgiIt);
+		}
+		
 		_fdToPort.erase(event.fd);
 		_clientManager.removeClient(event.fd);
 		return;
@@ -559,15 +574,10 @@ void Server::finalizeCgiSession(int cgiFd) {
 	CgiSession& session = it->second;
 	Client* client = session.client;
 	
-	if (!client) {
-		cleanupCgiSession(cgiFd, false);
-		return;
-	}
-	
 	std::cout << "  [CGI] Finalizing session (output: " 
 	          << session.outputBuffer.size() << " bytes)" << std::endl;
 	
-	// Wait for child process
+	// Always wait for child process to prevent zombies
 	int status;
 	waitpid(session.pid, &status, 0);
 	
@@ -575,6 +585,13 @@ void Server::finalizeCgiSession(int cgiFd) {
 		std::cout << "  [CGI] Process exited with status: " << WEXITSTATUS(status) << std::endl;
 	} else if (WIFSIGNALED(status)) {
 		std::cout << "  [CGI] Process killed by signal: " << WTERMSIG(status) << std::endl;
+	}
+	
+	// Check if client is still connected
+	if (!client) {
+		std::cout << "  [CGI] Client disconnected, discarding CGI output" << std::endl;
+		cleanupCgiSession(cgiFd, false);
+		return;
 	}
 	
 	// Parse CGI output
@@ -653,6 +670,11 @@ void Server::cleanupCgiSession(int cgiFd, bool sendError) {
 		client->setState(STATE_WRITING_RESPONSE);
 		client->setKeepAlive(false);
 		_epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
+	}
+	
+	// Remove client->CGI mapping if client is still valid
+	if (client) {
+		_clientToCgi.erase(client->getFd());
 	}
 	
 	// Remove stdin from helper map if it exists
@@ -745,6 +767,9 @@ void Server::startCgiSession(Client* client, const RouteResult& route) {
 	// Add stdout to epoll for reading and store session (keyed by stdout fd)
 	_epoll.add(session.stdoutFd, EVENT_READ);
 	_cgiSessions[session.stdoutFd] = session;
+	
+	// Map client fd to CGI stdout fd (for cleanup when client disconnects)
+	_clientToCgi[client->getFd()] = session.stdoutFd;
 	
 	// If we have input to send, add stdin to epoll for writing
 	if (!session.inputComplete) {
