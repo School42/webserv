@@ -15,10 +15,10 @@ Server::Server(const std::vector<ServerConfig>& servers)
 	  _running(false),
 	  _lastTimeoutCheck(std::time(NULL)) {
 	
-	std::cout << "✓ Router initialized" << std::endl;
-	std::cout << "✓ File server initialized" << std::endl;
-	std::cout << "✓ CGI handler initialized" << std::endl;
-	std::cout << "✓ Upload handler initialized" << std::endl;
+	std::cout << "âœ“ Router initialized" << std::endl;
+	std::cout << "âœ“ File server initialized" << std::endl;
+	std::cout << "âœ“ CGI handler initialized" << std::endl;
+	std::cout << "âœ“ Upload handler initialized" << std::endl;
 }
 
 // Destructor
@@ -63,7 +63,7 @@ void Server::setupListenSockets() {
 			_epoll.add(sock->getFd(), EVENT_READ);
 			_listenSockets.push_back(sock);
 			
-			std::cout << "✓ Listening on " 
+			std::cout << "âœ“ Listening on " 
 			          << (addrs[j].interface.empty() ? "0.0.0.0" : addrs[j].interface)
 			          << ":" << addrs[j].port << std::endl;
 		}
@@ -133,7 +133,7 @@ void Server::eventLoop() {
 		checkCgiTimeouts();
 	}
 	
-	std::cout << "✓ Server stopped gracefully" << std::endl;
+	std::cout << "âœ“ Server stopped gracefully" << std::endl;
 }
 
 // Check and handle client timeouts
@@ -446,36 +446,56 @@ Socket* Server::findListenSocket(int fd) const {
 }
 // Check if fd is a CGI pipe
 bool Server::isCgiPipe(int fd) const {
-	return _cgiSessions.find(fd) != _cgiSessions.end();
+	// Check if it's a stdout fd (primary session key)
+	if (_cgiSessions.find(fd) != _cgiSessions.end()) {
+		return true;
+	}
+	// Check if it's a stdin fd
+	if (_stdinToStdout.find(fd) != _stdinToStdout.end()) {
+		return true;
+	}
+	return false;
 }
 
 // Handle CGI event (read/write on CGI pipes)
 void Server::handleCgiEvent(const Event& event) {
 	int fd = event.fd;
-	std::map<int, CgiSession>::iterator it = _cgiSessions.find(fd);
 	
-	if (it == _cgiSessions.end()) {
+	// Find the session - check if this is a stdout fd or stdin fd
+	std::map<int, CgiSession>::iterator sessionIt;
+	bool isStdin = false;
+	
+	// First check if this fd is directly a session (stdout fd)
+	sessionIt = _cgiSessions.find(fd);
+	
+	// If not found, check if it's a stdin fd
+	if (sessionIt == _cgiSessions.end()) {
+		std::map<int, int>::iterator stdinIt = _stdinToStdout.find(fd);
+		if (stdinIt != _stdinToStdout.end()) {
+			// This is a stdin fd, get the corresponding stdout fd
+			int stdoutFd = stdinIt->second;
+			sessionIt = _cgiSessions.find(stdoutFd);
+			isStdin = true;
+		}
+	}
+	
+	if (sessionIt == _cgiSessions.end()) {
 		return;  // Session already cleaned up
 	}
 	
-	CgiSession& session = it->second;
+	CgiSession& session = sessionIt->second;
 	
 	// Handle errors
 	if (event.isError() || event.isHangup() || event.isPeerClosed()) {
 		std::cout << "  [CGI] Error or hangup on fd " << fd << std::endl;
 		
-		// If this is stdout, the CGI finished
-		if (fd == session.stdoutFd) {
-			finalizeCgiSession(fd);
-		} else {
-			// stdin error - cleanup
-			cleanupCgiSession(fd, true);
-		}
+		// Always cleanup using stdout fd
+		finalizeCgiSession(session.stdoutFd);
 		return;
 	}
 	
 	// Handle stdout (reading from CGI)
-	if (fd == session.stdoutFd && event.isReadable()) {
+	if (!isStdin && fd == session.stdoutFd && event.isReadable()) {
 		char buffer[4096];
 		ssize_t bytesRead = read(fd, buffer, sizeof(buffer));
 		
@@ -485,22 +505,19 @@ void Server::handleCgiEvent(const Event& event) {
 			// Check size limit
 			if (session.outputBuffer.size() > 10 * 1024 * 1024) {  // 10MB
 				std::cout << "  [CGI] Output too large" << std::endl;
-				cleanupCgiSession(fd, true);
+				cleanupCgiSession(session.stdoutFd, true);
 			}
 		} else if (bytesRead == 0) {
 			// EOF - CGI finished
 			std::cout << "  [CGI] EOF on stdout" << std::endl;
-			finalizeCgiSession(fd);
-		} else {
-			// bytesRead < 0: error or would-block
-			// On non-blocking socket, -1 with EAGAIN/EWOULDBLOCK is normal
-			// We'll get another event when data is available
-			// Real errors (pipe broken, etc.) will trigger error/hangup events
+			finalizeCgiSession(session.stdoutFd);
 		}
+		// bytesRead < 0: EAGAIN/EWOULDBLOCK or error
+		// Errors are handled by event.isError() above
 	}
 	
 	// Handle stdin (writing to CGI)
-	if (fd == session.stdinFd && event.isWritable() && !session.inputComplete) {
+	if (isStdin && fd == session.stdinFd && event.isWritable() && !session.inputComplete) {
 		size_t remaining = session.inputBuffer.size() - session.inputSent;
 		if (remaining > 0) {
 			ssize_t bytesWritten = write(fd, 
@@ -513,15 +530,21 @@ void Server::handleCgiEvent(const Event& event) {
 				// Check if all input sent
 				if (session.inputSent >= session.inputBuffer.size()) {
 					session.inputComplete = true;
+					
 					// Close stdin to signal EOF to CGI
 					close(session.stdinFd);
 					_epoll.remove(session.stdinFd);
+					
+					// Remove from helper map
+					_stdinToStdout.erase(session.stdinFd);
+					
+					// Mark stdin as closed in session
 					session.stdinFd = -1;
+					
 					std::cout << "  [CGI] All input sent, closed stdin" << std::endl;
 				}
 			}
 			// If bytesWritten <= 0, just wait for next writable event
-			// Real errors will trigger error/hangup events
 		}
 	}
 }
@@ -632,6 +655,11 @@ void Server::cleanupCgiSession(int cgiFd, bool sendError) {
 		_epoll.modify(client->getFd(), EVENT_WRITE | EVENT_RDHUP);
 	}
 	
+	// Remove stdin from helper map if it exists
+	if (session.stdinFd >= 0) {
+		_stdinToStdout.erase(session.stdinFd);
+	}
+	
 	// Remove pipes from epoll and close them
 	if (session.stdoutFd >= 0) {
 		_epoll.remove(session.stdoutFd);
@@ -657,10 +685,11 @@ void Server::checkCgiTimeouts() {
 	time_t now = std::time(NULL);
 	std::vector<int> timedOut;
 	
+	// Iterate over sessions (keyed by stdout fd)
 	for (std::map<int, CgiSession>::iterator it = _cgiSessions.begin();
 	     it != _cgiSessions.end(); ++it) {
 		if (now - it->second.startTime > 30) {  // 30 second timeout
-			std::cout << "  [CGI] Session timed out (fd: " << it->first << ")" << std::endl;
+			std::cout << "  [CGI] Session timed out (stdout fd: " << it->first << ")" << std::endl;
 			timedOut.push_back(it->first);
 		}
 	}
@@ -713,19 +742,19 @@ void Server::startCgiSession(Client* client, const RouteResult& route) {
 	session.clientPort = client->getPort();
 	session.serverPort = listenPort;
 	
-	// Add stdout to epoll for reading
+	// Add stdout to epoll for reading and store session (keyed by stdout fd)
 	_epoll.add(session.stdoutFd, EVENT_READ);
 	_cgiSessions[session.stdoutFd] = session;
 	
 	// If we have input to send, add stdin to epoll for writing
 	if (!session.inputComplete) {
 		_epoll.add(session.stdinFd, EVENT_WRITE);
-		// Also track by stdin fd
-		_cgiSessions[session.stdinFd] = session;
+		// Map stdin fd to stdout fd (for lookup in handleCgiEvent)
+		_stdinToStdout[session.stdinFd] = session.stdoutFd;
 	} else {
 		// No input - close stdin immediately
 		close(session.stdinFd);
-		session.stdinFd = -1;
+		_cgiSessions[session.stdoutFd].stdinFd = -1;
 	}
 	
 	// Set client to processing state

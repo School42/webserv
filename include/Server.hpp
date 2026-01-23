@@ -108,7 +108,8 @@ private:
 	FileServer _fileServer;
 	CgiHandler _cgiHandler;
 	UploadHandler _uploadHandler;
-	std::map<int, CgiSession> _cgiSessions;
+	std::map<int, CgiSession> _cgiSessions;  // Keyed by stdoutFd
+	std::map<int, int> _stdinToStdout;  // Maps stdin fd to stdout fd
 	
 	// Members - State
 	bool _running;
