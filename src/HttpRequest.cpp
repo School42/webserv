@@ -19,7 +19,7 @@ HttpRequest::HttpRequest()
 	  _currentChunkRead(0),
 	  _state(PARSE_REQUEST_LINE),
 	  _errorMessage(""),
-	  _maxBodySize(104857600) {}  // 100MB default
+	  _maxBodySize(1024 * 1024 * 100) {}  // 100 MB default
 
 // Destructor
 HttpRequest::~HttpRequest() {}
