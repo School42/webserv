@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <iostream>
+#include <cstddef>
 
 // Constructor
 HttpRequest::HttpRequest()
@@ -19,7 +20,7 @@ HttpRequest::HttpRequest()
 	  _currentChunkRead(0),
 	  _state(PARSE_REQUEST_LINE),
 	  _errorMessage(""),
-	  _maxBodySize(1024 * 1024 * 100) {}  // 100 MB default
+	  _maxBodySize(1024 * 1024 * 1024) {}  // 1 GB default
 
 // Destructor
 HttpRequest::~HttpRequest() {}
@@ -105,11 +106,12 @@ HttpParseResult HttpRequest::parse(const std::string& data, size_t& bytesConsume
 						_chunked = true;
 						_state = PARSE_CHUNKED_SIZE;
 					} else if (_contentLength > 0) {
-						if (_contentLength > _maxBodySize) {
-							_state = PARSE_ERROR;
-							_errorMessage = "Content-Length exceeds maximum body size";
-							return PARSE_FAILED;
-						}
+						// std::size_t max_size = static_cast<std::size_t>(-1);
+						// if (_contentLength > _maxBodySize || _contentLength > max_size) {
+						// 	_state = PARSE_ERROR;
+						// 	_errorMessage = "Content-Length exceeds maximum body size";
+						// 	return PARSE_FAILED;
+						// }
 						_state = PARSE_BODY;
 					} else {
 						_state = PARSE_COMPLETE;

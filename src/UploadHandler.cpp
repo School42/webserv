@@ -447,15 +447,6 @@ UploadResult UploadHandler::handleUpload(const HttpRequest& request,
 		return result;
 	}
 	
-	// Check body size
-	size_t maxBodySize = route.location->getClientMaxBodySize();
-	if (maxBodySize > 0 && request.getBody().size() > maxBodySize) {
-		result.statusCode = 413;
-		result.statusText = "Payload Too Large";
-		result.errorMessage = "Request body exceeds maximum allowed size";
-		return result;
-	}
-	
 	// Check content type
 	std::string contentType = request.getHeader("Content-Type");
 	if (contentType.empty()) {
@@ -482,6 +473,17 @@ UploadResult UploadHandler::handleUpload(const HttpRequest& request,
 			result.statusText = "Bad Request";
 			result.errorMessage = "Failed to parse multipart body";
 			return result;
+		}
+
+		for (size_t i = 0; i < parts.size(); ++i){
+			// Check body size
+			size_t maxBodySize = route.location->getClientMaxBodySize();
+			if (maxBodySize > 0 && parts[i].data.size() > maxBodySize) {
+				result.statusCode = 413;
+				result.statusText = "Payload Too Large";
+				result.errorMessage = "Request body exceeds maximum allowed size";
+				return result;
+			}
 		}
 		
 		// Process each file part
@@ -523,6 +525,15 @@ UploadResult UploadHandler::handleUpload(const HttpRequest& request,
 			// No file parts - just form data
 		}
 	} else {
+		// Check body size
+		size_t maxBodySize = route.location->getClientMaxBodySize();
+		if (maxBodySize > 0 && request.getBody().size() > maxBodySize) {
+			result.statusCode = 413;
+			result.statusText = "Payload Too Large";
+			result.errorMessage = "Request body exceeds maximum allowed size";
+			return result;
+		}
+
 		// Handle raw upload (application/octet-stream)
 		// Use filename from Content-Disposition header if present
 		std::string filename = "upload";
